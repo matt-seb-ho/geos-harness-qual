@@ -291,9 +291,11 @@ PRICE_PER_MTOK = (float(os.environ.get("QUAL_PRICE_IN", "0.075")),
                   float(os.environ.get("QUAL_PRICE_OUT", "0.25")))
 
 #: Billed dollars per rollout, measured against account deltas rather than
-#: transcripts. $0.134 on the research harness (n=6, 2026-09-08) and $0.134 on
-#: this kit (n=1, 2026-09-12) -- the curated corpus halved wall-clock (1453s ->
-#: 687s) without moving the bill. Used to size a run before you start it.
+#: transcripts. $0.134 on the research harness (n=6, 2026-09-08); $0.134 and
+#: $0.108 on this kit (2026-09-12, seed configuration, TutorialPoroelasticity).
+#: The curated corpus halved wall-clock (1453s -> 690-780s) without moving the
+#: bill much. Used to size a run before you start it; it is a planning figure
+#: from a handful of rollouts, not a constant.
 MEASURED_USD_PER_ROLLOUT = 0.134
 
 

@@ -211,9 +211,9 @@ in the note as the experiment you would run next, with what it would cost.
 
 ## Spending money
 
-Everything above this line is free. Below it, each rollout is **$0.134 billed
-and about 12 minutes** — measured on this kit on 2026-09-12, and the same
-figure the research harness measures against account deltas.
+Everything above this line is free. Below it, a rollout is roughly **$0.11–0.13
+billed and 11–13 minutes** — measured on this kit on 2026-09-12 against account
+deltas, and in the same band the research harness reports. Budget at $0.134.
 
 ```bash
 qual baseline --seeds 2        # seed config, 4 train tasks x 2 seeds = 8 rollouts
