@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from qualkit import mock, tasks
-from qualkit.adapter import Adapter, load_seed
+from qualkit.config import HarnessConfig, load_seed
 from qualkit.evaluate import EvalResult, Evaluator, compare
 from qualkit.ledger import BudgetGuard, Ledger
 from qualkit.rollout import Cost, Rollout
@@ -22,7 +22,7 @@ def evaluator(tmp_path):
 
 def _result(values: dict[str, float], status: str = "success") -> EvalResult:
     rollouts = tuple(
-        Rollout(task=task, adapter_id="cand_x", seed=1,
+        Rollout(task=task, config_id="cand_x", seed=1,
                 score=Score(task, value, status), cost=Cost())
         for task, value in values.items()
     )
@@ -40,10 +40,10 @@ def test_second_evaluation_is_free(evaluator):
     evaluator.evaluate(seed, TRAIN)
     before = len(evaluator.ledger.rows())
     evaluator.evaluate(seed, TRAIN)
-    assert len(evaluator.ledger.rows()) == before, "an identical adapter must replay"
+    assert len(evaluator.ledger.rows()) == before, "an identical configuration must replay"
 
 
-def test_over_budget_adapter_never_reaches_a_runner(tmp_path):
+def test_invalid_config_never_reaches_a_runner(tmp_path):
     calls = []
 
     def explode(*args, **kwargs):
@@ -53,7 +53,7 @@ def test_over_budget_adapter_never_reaches_a_runner(tmp_path):
     evaluator = Evaluator(ledger=Ledger(tmp_path / "l.jsonl"), runner=explode,
                           verbose=False)
     with pytest.raises(Exception):
-        evaluator.evaluate(Adapter(primer="word " * 5000), TRAIN)
+        evaluator.evaluate(HarnessConfig(tools=("Bash", "WebFetch")), TRAIN)
     assert not calls
 
 
@@ -68,7 +68,7 @@ def test_harness_errors_are_excluded_from_the_score_and_counted():
     ok = Rollout("a", "c", 1, Score("a", 0.8, "success"), Cost())
     broken = Rollout("b", "c", 1, Score("b", 0.0, "harness_error"), Cost())
     result = EvalResult("c", (ok, broken))
-    assert result.mean == pytest.approx(0.8), "a dead container is not a bad adapter"
+    assert result.mean == pytest.approx(0.8), "a dead container is not a bad configuration"
     assert result.harness_errors == 1
 
 

@@ -1,6 +1,6 @@
 runs/
 runs-mock/
-adapter/champion/
+harness/champion/
 .env
 __pycache__/
 *.pyc

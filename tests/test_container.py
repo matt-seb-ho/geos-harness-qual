@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from qualkit import agents
-from qualkit.adapter import load_seed
+from qualkit.config import HarnessConfig, RetryPolicy, load_seed
 from qualkit.container import ContainerSpec, Mount, render_docker, render_enroot
 from qualkit.rollout import build_argv, build_spec, build_task_prompt
 
@@ -43,7 +43,8 @@ def test_web_tools_are_disallowed(spec):
     rendered = " ".join(spec.argv)
     for tool in ("WebSearch", "WebFetch"):
         assert f"--disallowedTools {tool}" in rendered
-    assert {"WebSearch", "WebFetch"} <= set(agents.DISALLOWED_TOOLS)
+    from qualkit.config import FORBIDDEN_TOOLS
+    assert {"WebSearch", "WebFetch"} <= set(FORBIDDEN_TOOLS)
 
 
 def test_no_simulator_is_mounted(spec):
@@ -61,19 +62,35 @@ def test_no_simulator_is_mounted(spec):
 def test_every_harness_builds_an_argv():
     from qualkit.agents import HARNESSES
     for name, harness in HARNESSES.items():
-        argv = harness.argv(load_seed(), "PROMPT", "some/model", 40)
+        argv = harness.argv(load_seed(), "PROMPT", "some/model")
         assert argv[0] == harness.binary, name
         assert argv[-1] == "PROMPT", name
         assert "some/model" in argv, name
 
 
+def test_a_harness_reports_what_it_will_ignore_rather_than_dropping_it():
+    from qualkit.agents import get
+    config = load_seed().with_changes(origin="t", settings={"hooks": {}},
+                                      mcp_servers={"x": {}})
+    assert get("claude").unsupported(config) == []
+    ignored = get("acpx:codex").unsupported(config)
+    assert any("settings" in item for item in ignored)
+
+
+def test_harness_bundle_is_mounted_read_only(spec):
+    bundle = next(m for m in spec.mounts if str(m.target) == "/harness")
+    assert bundle.read_only
+
+
+def test_turn_cap_comes_from_the_configuration():
+    config = load_seed().with_changes(origin="t", max_turns=13)
+    argv = build_argv(config, "PROMPT")
+    assert argv[argv.index("--max-turns") + 1] == "13"
+
+
 def test_only_claude_claims_to_be_verified():
     from qualkit.agents import HARNESSES
     assert [n for n, h in HARNESSES.items() if h.verified] == ["claude"]
-
-
-def test_turn_cap_is_passed(spec):
-    assert "--max-turns" in spec.argv
 
 
 def test_prompt_is_separated_from_flags(spec):
@@ -82,11 +99,11 @@ def test_prompt_is_separated_from_flags(spec):
     assert spec.argv[-1].startswith("--- BEGIN SIMULATION SPECIFICATION ---")
 
 
-def test_scope_note_is_in_the_task_prompt_not_the_adapter():
+def test_scope_note_is_in_the_task_prompt_not_the_configuration():
     """It defines the task, so it must be identical across candidates."""
     prompt = build_task_prompt("kgdToughnessDominated")
     assert "Do NOT run the simulation" in prompt
-    assert "Do NOT run the simulation" not in load_seed().system_prompt()
+    assert "Do NOT run the simulation" not in load_seed().system_prompt
 
 
 def test_docker_and_enroot_carry_the_same_mounts():

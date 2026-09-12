@@ -17,7 +17,7 @@ graceful degradation: you lose the comparison, because a half-evaluated
 candidate cannot be compared with a fully evaluated one.
 
 **Record every rollout to an append-only file.** A search is hours long and
-things crash. The ledger is keyed on ``(adapter id, task, seed, model)`` so a
+things crash. The ledger is keyed on ``(config id, task, seed, model)`` so a
 resumed run replays what it already paid for instead of buying it twice. The
 model is part of the key deliberately: without it, a resume happily serves
 rollouts produced by a *different* model as though they were this run's, which
@@ -138,14 +138,14 @@ class Ledger:
 
     @staticmethod
     def _key_of(row: dict) -> tuple:
-        return (row.get("adapter_id"), row.get("task"), row.get("seed"),
+        return (row.get("config_id"), row.get("task"), row.get("seed"),
                 row.get("model"))
 
-    def key(self, adapter_id: str, task: str, seed: int) -> tuple:
-        return (adapter_id, task, seed, self.model)
+    def key(self, config_id: str, task: str, seed: int) -> tuple:
+        return (config_id, task, seed, self.model)
 
-    def get(self, adapter_id: str, task: str, seed: int) -> Rollout | None:
-        row = self._rows.get(self.key(adapter_id, task, seed))
+    def get(self, config_id: str, task: str, seed: int) -> Rollout | None:
+        row = self._rows.get(self.key(config_id, task, seed))
         return _rollout_from_json(row) if row else None
 
     def append(self, rollout: Rollout) -> None:
@@ -173,7 +173,7 @@ def _rollout_from_json(row: dict) -> Rollout:
     score = row.get("score", {})
     cost = row.get("cost", {})
     return Rollout(
-        task=row["task"], adapter_id=row["adapter_id"], seed=row["seed"],
+        task=row["task"], config_id=row["config_id"], seed=row["seed"],
         score=Score(task=score.get("task", row["task"]),
                     value=float(score.get("value", 0.0)),
                     status=score.get("status", "success"),

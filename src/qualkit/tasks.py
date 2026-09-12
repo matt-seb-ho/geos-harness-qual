@@ -20,7 +20,7 @@ Why families, and why the split is by family
 These are not seven independent tasks. They are four physics families with
 heavy structural sharing: two wellbore decks share mesh idioms, boundary
 stanzas and solver blocks that neither shares with a fracture deck. Split them
-at random and an adapter can learn a family from one member and score on its
+at random and a configuration can learn a family from one member and score on its
 sibling without generalising at all -- and the split reports that as held-out
 performance.
 

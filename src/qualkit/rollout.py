@@ -4,12 +4,13 @@ A rollout is the unit of cost. It is ~10-25 minutes of wall clock and a few
 cents, and everything your loop does is ultimately denominated in these. The
 contract is deliberately narrow:
 
-    run_rollout(adapter, task, seed) -> Rollout
+    run_rollout(config, task, seed) -> Rollout
 
 and the only thing that varies between two rollouts of the same task is the
-adapter. The model, the container, the corpus, the task prompt and the scoring
-are fixed. If you find yourself wanting to change one of them to make your
-method work, that is a finding for the write-up, not an edit.
+harness configuration. The model, the container image, the corpus, the task
+prompt and the scoring are fixed; everything else about the harness is yours.
+If you find yourself wanting to change one of the fixed five to make your method
+work, that is a finding for the write-up, not an edit.
 
 **Run and score are one call that cannot be half-performed.** Scoring happens on
 the way out, on every path -- non-zero exit, timeout, missing workspace. In an
@@ -17,11 +18,16 @@ earlier version of this system they were two steps in a shell script and the
 second was simply never invoked, so three rounds of search consumed a score of
 ``None`` and reported a round mean of zero.
 
-The retry loop is here rather than inside the container. The research harness
-runs it as a ``Stop`` hook so the agent never sees a turn boundary; this runs it
-as a second invocation against the same workspace. Simpler, visible in the
-transcript, and searchable in exactly the same way -- but say which one you used
-if you compare numbers with ours.
+Two ways to push an agent to fix its own output, and you can use either or both:
+
+* ``config.retry`` -- host-driven. Shell checks run against the finished
+  workspace; a failure starts another invocation against the same files. Works
+  on every harness, visible in the transcript, costs a fresh context each time.
+* ``config.settings["hooks"]`` -- a ``Stop`` hook inside the container, so the
+  agent never sees a turn boundary and keeps its context. Claude Code only.
+
+They cost different things and nobody here has measured which is better. That is
+a perfectly good thing for your loop to find out.
 """
 
 from __future__ import annotations
@@ -37,7 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from qualkit import agents, corpus, tasks
-from qualkit.adapter import Adapter
+from qualkit.config import CONTAINER_HARNESS_DIR, HarnessConfig
 from qualkit.container import IMAGE, ContainerSpec, Mount, prepare_workspace
 from qualkit.scoring import Score, score_workspace
 
@@ -46,22 +52,24 @@ from qualkit.scoring import Score, score_workspace
 #: glm-5.3-flash scores indistinguishably from models seven times its price.
 MODEL = os.environ.get("QUAL_MODEL", "z-ai/glm-5.3-flash")
 
-#: Hard ceiling on agent turns. Measured on the research harness: rollouts that
+#: Default turn cap for a new configuration -- a starting value, not a limit:
+#: ``HarnessConfig.max_turns`` is yours to move. Measured on the research
+#: harness, and worth knowing before you raise it: rollouts that
 #: hit the wall-clock timeout averaged 199 turns against 84 for those that
 #: finished, and input tokens -- the whole bill -- grow superlinearly in turns
 #: because each turn resends the conversation. A runaway rollout costs ~3.4x a
 #: completed one and returns nothing. SIGA's published runs averaged 25 tool
 #: calls on these same specs, so 60 is generous rather than binding.
-MAX_TURNS = int(os.environ.get("QUAL_MAX_TURNS", "60"))
+DEFAULT_MAX_TURNS = int(os.environ.get("QUAL_MAX_TURNS", "60"))
 
 #: Wall-clock ceiling per container invocation.
 TIMEOUT_S = float(os.environ.get("QUAL_TIMEOUT_S", "1500"))
 
 #: What the deliverable is, and what is out of scope. This lives in the TASK
-#: prompt, deliberately, not in the adapter: it defines the task, so it must be
-#: identical across every candidate. Inside the adapter it would be a component
-#: your loop could delete, and two candidates would then be solving different
-#: tasks -- the confound this whole setup exists to avoid.
+#: prompt, deliberately, not in the configuration: it defines the task, so it
+#: must be identical across every candidate. In the configuration it would be
+#: something your loop could delete, and two candidates would then be solving
+#: different tasks -- the confound this whole setup exists to avoid.
 SCOPE_NOTE = """
 
 --- SCOPE ---
@@ -99,7 +107,7 @@ class Cost:
 @dataclass(frozen=True)
 class Rollout:
     task: str
-    adapter_id: str
+    config_id: str
     seed: int
     score: Score
     cost: Cost
@@ -108,7 +116,7 @@ class Rollout:
     error: str | None = None
 
     def to_json(self) -> dict[str, Any]:
-        return {"task": self.task, "adapter_id": self.adapter_id, "seed": self.seed,
+        return {"task": self.task, "config_id": self.config_id, "seed": self.seed,
                 "score": self.score.to_json(), "cost": self.cost.to_json(),
                 "workspace": self.workspace, "attempts": self.attempts,
                 "error": self.error, "model": MODEL}
@@ -122,51 +130,66 @@ def build_task_prompt(task_id: str) -> str:
             "--- END SIMULATION SPECIFICATION ---" + SCOPE_NOTE)
 
 
-def build_argv(adapter: Adapter, prompt: str, *, model: str = MODEL,
-               max_turns: int = MAX_TURNS, harness: str | None = None) -> list[str]:
+def build_argv(config: HarnessConfig, prompt: str, *, model: str = MODEL,
+               harness: str | None = None) -> list[str]:
     """The command run inside the container. Shape depends on the harness."""
-    return agents.get(harness).argv(adapter, prompt, model, max_turns)
+    return agents.get(harness).argv(config, prompt, model)
 
 
-def build_spec(adapter: Adapter, task_id: str, workspace: Path, corpus_dir: Path,
-               prompt: str, *, model: str = MODEL, max_turns: int = MAX_TURNS,
+def build_spec(config: HarnessConfig, task_id: str, workspace: Path,
+               corpus_dir: Path, prompt: str, *, model: str = MODEL,
                harness: str | None = None) -> ContainerSpec:
     """Mounts, environment and argv for one rollout.
 
-    Note what is *not* mounted: there is no GEOS binary, no solver, no
-    validator. The agent authors a deck and cannot run it. That is deliberate
-    and it matches the setup the published SIGA results were measured on.
-    Letting the agent execute the simulator was measured on this project at
-    7.3 solve invocations per rollout and was the single largest cost driver of
-    a campaign -- for output that scoring never reads, since the deck is scored
-    structurally against a reference. Removing it cut wall-clock 41% and cost
-    31%.
+    Three mounts and no more:
 
-    Ground truth is not mounted either. Scoring happens on the host after the
+    ``/geos_lib``   the curated GEOS corpus for *this task*, read-only, with
+                    that task's decks and their variant siblings removed.
+    ``/workspace``  writable. The deck goes in ``inputs/``.
+    ``/harness``    read-only. Whatever ``config.files`` contains -- hook
+                    scripts, MCP servers, notes, a cheatsheet.
+
+    Note what is *not* mounted. There is no GEOS binary, no solver, no
+    ``geosx``: the agent authors a deck and cannot execute it, which matches the
+    setup the published SIGA results were measured on. When the simulator *was*
+    reachable here, agents ran 7.3 solves per rollout for output nothing scores;
+    removing it cut wall-clock 41% and cost 31%, and gating it instead made
+    things worse (attempts doubled, cost +59%).
+
+    Schema validation is still available, because ``xmllint`` is in the image
+    and the schema is in the corpus:
+    ``xmllint --noout --schema /geos_lib/schema/schema.xsd inputs/deck.xml``.
+    On a rejected deck it prints the complete list of elements GEOS will accept
+    at that point. Nothing wires it up for you.
+
+    Ground truth is not mounted either. Scoring happens on the host, after the
     container exits.
     """
+    env = [
+        "HOME=/workspace/.claude_home",
+        "XDG_CONFIG_HOME=/workspace/.claude_home/.config",
+        "UV_CACHE_DIR=/workspace/.uv_cache",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_API_KEY=",
+        "OPENROUTER_API_KEY",
+        f"QUAL_HARNESS_DIR={CONTAINER_HARNESS_DIR}",
+        # A coding CLI reads a "provider/model" string as a native model id and
+        # 404s against a gateway unless told otherwise. These two are the
+        # missing signal.
+        f"ANTHROPIC_CUSTOM_MODEL_OPTION={model}",
+        f"ANTHROPIC_CUSTOM_MODEL_OPTION_NAME={model} via gateway",
+    ]
+    env += [f"{k}={v}" for k, v in sorted(config.env.items())]
     return ContainerSpec(
         image=IMAGE,
         mounts=[
             Mount(corpus_dir, "/geos_lib", read_only=True),
             Mount(workspace, "/workspace"),
+            Mount(workspace / ".harness", CONTAINER_HARNESS_DIR, read_only=True),
         ],
-        env=[
-            "HOME=/workspace/.claude_home",
-            "XDG_CONFIG_HOME=/workspace/.claude_home/.config",
-            "UV_CACHE_DIR=/workspace/.uv_cache",
-            "ANTHROPIC_BASE_URL",
-            "ANTHROPIC_AUTH_TOKEN",
-            "ANTHROPIC_API_KEY=",
-            "OPENROUTER_API_KEY",
-            # A coding CLI reads a "provider/model" string as a native model id
-            # and 404s against a gateway unless told otherwise. These two are the
-            # missing signal.
-            f"ANTHROPIC_CUSTOM_MODEL_OPTION={model}",
-            f"ANTHROPIC_CUSTOM_MODEL_OPTION_NAME={model} via gateway",
-        ],
-        argv=build_argv(adapter, prompt, model=model, max_turns=max_turns,
-                        harness=harness),
+        env=env,
+        argv=build_argv(config, prompt, model=model, harness=harness),
     )
 
 
@@ -181,53 +204,59 @@ def child_env() -> dict[str, str]:
     return env
 
 
-# -- the checks the stop policy may require ---------------------------------
+# -- retry checks -----------------------------------------------------------
 
-def check_parse(workspace: Path) -> list[str]:
-    decks = sorted((workspace / "inputs").rglob("*.xml"))
-    if not decks:
-        return ["no XML deck was written to /workspace/inputs/"]
-    problems = []
-    for deck in decks:
-        try:
-            ET.parse(deck)
-        except ET.ParseError as exc:
-            problems.append(f"{deck.name} is not well-formed XML: {exc}")
-    return problems
+def run_checks(config: HarnessConfig, workspace: Path, corpus_dir: Path,
+               *, timeout_s: float = 180.0) -> list[str]:
+    """Run the configuration's shell checks in the container. Empty list = done.
 
-
-def check_required_sections(workspace: Path) -> list[str]:
-    from qualkit.treesim import REQUIRED_SECTIONS, load_and_resolve_dir
-    try:
-        root = load_and_resolve_dir(workspace / "inputs")
-    except Exception as exc:  # noqa: BLE001
-        return [f"deck could not be loaded: {exc}"]
-    present = {child.tag for child in root if isinstance(child.tag, str)}
-    missing = [s for s in REQUIRED_SECTIONS if s not in present]
-    return [f"required top-level sections absent: {', '.join(missing)}"] if missing else []
-
-
-CHECKS = {"parse": check_parse, "required_sections": check_required_sections}
-
-
-def run_checks(adapter: Adapter, workspace: Path) -> list[str]:
+    Run in the container rather than on the host so a check can use whatever the
+    image has -- ``xmllint``, ``python3``, anything the configuration ships in
+    its own ``/harness`` bundle -- without you having to install it twice. No
+    model call, so a check costs seconds and no money.
+    """
+    if not config.retry.checks:
+        return []
     problems: list[str] = []
-    for name in adapter.stop_policy.checks:
-        problems.extend(CHECKS[name](workspace))
+    for command in config.retry.checks:
+        spec = ContainerSpec(
+            image=IMAGE,
+            mounts=[Mount(corpus_dir, "/geos_lib", read_only=True),
+                    Mount(workspace, "/workspace"),
+                    Mount(workspace / ".harness", CONTAINER_HARNESS_DIR, read_only=True)],
+            env=["HOME=/workspace/.claude_home"],
+            argv=["sh", "-c", command],
+        )
+        try:
+            result = subprocess.run(spec.render(), capture_output=True, text=True,
+                                    timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            problems.append(f"check timed out: {command}")
+            continue
+        if result.returncode != 0:
+            output = "\n".join(part.strip() for part in
+                               (result.stdout, result.stderr) if part.strip())
+            problems.append(f"$ {command}\n{output[:4000]}")
     return problems
 
 
-def retry_prompt(adapter: Adapter, problems: list[str]) -> str:
-    """What the agent is told when its deck did not pass. Shape is searchable."""
-    shape = adapter.stop_policy.feedback_shape
-    if shape == "none":
+def retry_prompt(config: HarnessConfig, problems: list[str]) -> str:
+    """What the agent is told when a check failed. The wording is yours to search.
+
+    ``verbose`` forwards the check's own output. For ``xmllint --schema`` that
+    output includes the complete list of elements GEOS will accept at the point
+    of failure, which is the richest feedback available in this setup and costs
+    nothing to produce.
+    """
+    mode = config.retry.feedback
+    if mode == "none":
         return "Your deck is not finished. Fix it in /workspace/inputs/."
-    if shape == "minimal":
+    if mode == "terse":
         return ("Your deck in /workspace/inputs/ did not pass the output check. "
                 "Fix it and write the corrected deck to the same directory.")
-    return ("Your deck in /workspace/inputs/ did not pass the output check:\n"
-            + "\n".join(f"  - {p}" for p in problems)
-            + "\nFix these and write the corrected deck to the same directory. "
+    return ("Your deck in /workspace/inputs/ did not pass these checks:\n\n"
+            + "\n\n".join(problems)
+            + "\n\nFix them and write the corrected deck to the same directory. "
               "Do not start over; edit what is there.")
 
 
@@ -368,21 +397,32 @@ def _cost(fresh_in: int, out: int, tool_calls: int, turns: int) -> Cost:
 
 # -- the rollout ------------------------------------------------------------
 
-def run_rollout(adapter: Adapter, task_id: str, seed: int = 1, *,
+def run_rollout(config: HarnessConfig, task_id: str, seed: int = 1, *,
                 results_root: Path | None = None, model: str = MODEL,
-                max_turns: int = MAX_TURNS, timeout_s: float = TIMEOUT_S,
-                harness: str | None = None, keep_workspace: bool = True,
-                verbose: bool = True) -> Rollout:
-    """Run one task once, with one adapter, and score it. Never raises."""
+                timeout_s: float = TIMEOUT_S, harness: str | None = None,
+                keep_workspace: bool = True, verbose: bool = True) -> Rollout:
+    """Run one task once, with one configuration, and score it. Never raises."""
     task = tasks.get(task_id)
     agent = agents.get(harness)
+    config.validate()
     results_root = Path(results_root or os.environ.get(
         "QUAL_RESULTS_ROOT", Path.cwd() / "runs"))
-    workspace = results_root / f"{adapter.cid}-s{seed}-{task_id}"
+    workspace = results_root / f"{config.cid}-s{seed}-{task_id}"
     if workspace.exists():
         shutil.rmtree(workspace)
     prepare_workspace(workspace)
+    # The bundle dir always exists, even when empty: enroot cannot create a
+    # mountpoint inside a read-only rootfs, so an absent source is a hard error
+    # rather than an empty mount.
+    (workspace / ".harness").mkdir(exist_ok=True)
+    agents.materialize(config, workspace, workspace / ".harness")
     corpus_dir = corpus.build(task_id).root
+
+    if verbose:
+        ignored = agent.unsupported(config)
+        if ignored:
+            print(f"    [{task_id} s{seed}] {agent.name} ignores: "
+                  f"{', '.join(ignored)}", flush=True)
 
     events_path = workspace / "events.jsonl"
     prompt = build_task_prompt(task_id)
@@ -391,11 +431,10 @@ def run_rollout(adapter: Adapter, task_id: str, seed: int = 1, *,
     attempts = 0
     error: str | None = None
 
-    for attempt in range(adapter.stop_policy.max_retries + 1):
+    for attempt in range(config.retry.max_attempts):
         attempts += 1
-        spec = build_spec(adapter, task_id, workspace, corpus_dir, prompt,
-                          model=model, max_turns=max_turns, harness=agent.name)
-        argv = spec.render()
+        argv = build_spec(config, task_id, workspace, corpus_dir, prompt,
+                          model=model, harness=agent.name).render()
         if verbose:
             print(f"    [{task_id} s{seed}] attempt {attempts} starting", flush=True)
         attempt_events = workspace / f"events.attempt{attempt}.jsonl"
@@ -415,10 +454,12 @@ def run_rollout(adapter: Adapter, task_id: str, seed: int = 1, *,
         with events_path.open("a") as sink:
             sink.write(attempt_events.read_text(errors="replace"))
 
-        problems = run_checks(adapter, workspace)
-        if not problems or attempt == adapter.stop_policy.max_retries:
+        if attempt == config.retry.max_attempts - 1:
             break
-        prompt = retry_prompt(adapter, problems)
+        problems = run_checks(config, workspace, corpus_dir)
+        if not problems:
+            break
+        prompt = retry_prompt(config, problems)
 
     total = replace(total, wall_seconds=time.time() - started)
     score = score_workspace(workspace / "inputs", task.ground_truth_dir, task_id)
@@ -431,6 +472,6 @@ def run_rollout(adapter: Adapter, task_id: str, seed: int = 1, *,
 
     if not keep_workspace:
         shutil.rmtree(workspace, ignore_errors=True)
-    return Rollout(task=task_id, adapter_id=adapter.cid, seed=seed, score=score,
+    return Rollout(task=task_id, config_id=config.cid, seed=seed, score=score,
                    cost=total, workspace=str(workspace) if keep_workspace else None,
                    attempts=attempts, error=error)

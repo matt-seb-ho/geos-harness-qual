@@ -11,8 +11,9 @@ of a cent against $0.134 for a rollout. If your proposer spend is visible next
 to your rollout spend, something has gone wrong.
 
 One rule that is not optional: **the proposer must never see ground truth.**
-Not a reference deck, not a value copied out of one. If it does, your adapter
-becomes a place to store the answer and every score after that is meaningless.
+Not a reference deck, not a value copied out of one. If it does, your
+configuration becomes a place to store the answer and every score after that is
+meaningless.
 ``qualkit.scoring.diagnose`` gives you feedback derived only from the generated
 deck; use that. See ``docs/CONTAMINATION.md``.
 """

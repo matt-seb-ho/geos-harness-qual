@@ -1,0 +1,17 @@
+{
+  "system_prompt": "# GEOS\n\nGEOS is an open-source multiphysics simulator. Tasks require authoring an XML\ninput deck (or a small set of XML files cross-referenced with `<Included>`).\n\n- A filtered copy of the GEOS repository is mounted read-only at `/geos_lib/`.\n  It holds example decks under `/geos_lib/inputFiles/`, the documentation under\n  `/geos_lib/docs/`, and the XML schema at `/geos_lib/schema/schema.xsd`.\n- Write your final XML deck to `/workspace/inputs/`.\n",
+  "tools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep"],
+  "disallowed_tools": [],
+  "max_turns": 60,
+  "settings": {},
+  "mcp_servers": {},
+  "env": {},
+  "retry": {
+    "max_attempts": 1,
+    "checks": [],
+    "feedback": "terse"
+  },
+  "extra_argv": [],
+  "origin": "seed: a five-line primer, the default tool set, one attempt, no hooks, no extra tools. Everything it does not do is room for your loop.",
+  "parent_id": null
+}

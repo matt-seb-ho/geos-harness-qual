@@ -6,8 +6,8 @@
     qual corpus [--force]           build the per-task read-only GEOS trees
     qual audit                      prove no task's corpus leaks its answer
     qual score <workspace> <task>   score a finished workspace, free
-    qual mock                       run the seed adapter on the mock, free
-    qual baseline [--seeds 2]       measure the seed on the train split (COSTS MONEY)
+    qual mock                       run the seed config on the mock runner, free
+    qual baseline [--seeds 2]       measure the seed config on train (COSTS MONEY)
     qual run <task> [--seed 1]      one real rollout, for debugging (COSTS MONEY)
     qual evolve [--mock]            run your loop in evolve/loop.py
     qual report <ledger.jsonl>      re-derive every number from the ledger, free
@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 from qualkit import corpus, tasks
-from qualkit.adapter import Adapter, load_seed
+from qualkit.config import HarnessConfig, load_seed
 from qualkit.evaluate import Evaluator, compare
 from qualkit.ledger import BudgetGuard, Ledger
 from qualkit.rollout import MEASURED_USD_PER_ROLLOUT
@@ -121,13 +121,17 @@ def cmd_corpus(args) -> int:
 def cmd_audit(args) -> int:
     failures = 0
     for task in tasks.load_tasks():
+        # Build first: "not built yet" is not a leak, and reporting it as one
+        # trains you to ignore this command's output.
+        corpus.build(task.task_id)
         problems = corpus.audit(task.task_id)
         status = "ok" if not problems else f"{len(problems)} PROBLEMS"
         print(f"{task.task_id:<48} {status}")
         for problem in problems:
             print(f"    {problem}")
         failures += len(problems)
-    print("\nclean" if not failures else f"\n{failures} leaks -- do not trust any score until these are fixed")
+    print("\nclean" if not failures
+          else f"\n{failures} leaks -- do not trust any score until these are fixed")
     return 0 if not failures else 1
 
 
@@ -164,7 +168,7 @@ def cmd_run(args) -> int:
 def cmd_baseline(args) -> int:
     task_ids = [t.task_id for t in tasks.load_tasks(args.split)]
     n = len(task_ids) * args.seeds
-    if not _confirm(f"measure the seed adapter on {len(task_ids)} {args.split} tasks "
+    if not _confirm(f"measure the seed configuration on {len(task_ids)} {args.split} tasks "
                     f"x {args.seeds} seeds = {n} rollouts "
                     f"(~${MEASURED_USD_PER_ROLLOUT * n:.2f}, "
                     f"~{n * 12 / args.parallel:.0f} min)?", args.yes):
@@ -200,12 +204,12 @@ def cmd_evolve(args) -> int:
                           runner=runner, seeds=tuple(range(1, args.seeds + 1)),
                           max_parallel=args.parallel,
                           results_root=Path("runs-mock" if args.mock else "runs"))
-    seed_adapter = load_seed()
-    champion = evolve(seed_adapter, evaluator, task_ids)
+    seed_config = load_seed()
+    champion = evolve(seed_config, evaluator, task_ids)
     champion.save(Path(args.out))
     print(f"\nchampion written to {args.out}")
 
-    before = evaluator.evaluate(seed_adapter, task_ids)
+    before = evaluator.evaluate(seed_config, task_ids)
     after = evaluator.evaluate(champion, task_ids)
     print()
     print(compare(after, before).render())
@@ -216,11 +220,11 @@ def cmd_report(args) -> int:
     from qualkit.evaluate import EvalResult
     from qualkit.ledger import _rollout_from_json
     rows = [json.loads(line) for line in Path(args.ledger).read_text().splitlines() if line.strip()]
-    by_adapter: dict[str, list] = {}
+    by_config: dict[str, list] = {}
     for row in rows:
-        by_adapter.setdefault(row["adapter_id"], []).append(_rollout_from_json(row))
-    for adapter_id, rollouts in by_adapter.items():
-        print(EvalResult(adapter_id, tuple(rollouts)).render())
+        by_config.setdefault(row["config_id"], []).append(_rollout_from_json(row))
+    for config_id, rollouts in by_config.items():
+        print(EvalResult(config_id, tuple(rollouts)).render())
         print()
     estimated = sum(r.get("cost", {}).get("usd", 0.0) for r in rows)
     print(f"{len(rows)} rollouts, ~${estimated:.2f} estimated from transcripts "
@@ -276,7 +280,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--parallel", type=int, default=3)
     p.add_argument("--budget", type=float, default=DEFAULT_CEILING)
     p.add_argument("--ledger", default=str(DEFAULT_LEDGER))
-    p.add_argument("--out", default="adapter/champion")
+    p.add_argument("--out", default="harness/champion")
     p.add_argument("--harness", default=None)
     p.add_argument("--yes", action="store_true")
     p.set_defaults(func=cmd_evolve)

@@ -91,8 +91,8 @@ def diagnose(score: Score, k: int = 6) -> str:
 
     This is the feedback signal your loop is allowed to consume. It is derived
     only from the *generated* deck and the section scores -- it never quotes
-    ground-truth values, which would turn your adapter into a place to store
-    the answer. See ``docs/CONTAMINATION.md``.
+    ground-truth values, which would turn your configuration into a place to
+    store the answer. See ``docs/CONTAMINATION.md``.
     """
     if score.failed:
         return f"{score.status}: {score.detail.get('error', '')}".strip().rstrip(":")

@@ -25,6 +25,27 @@ by `qualkit/corpus.py`. Three things are removed for that task:
 Hardlinks, not symlinks: a symlink can be followed out of the mount to its
 target; a hardlink to a file that was never linked simply does not exist inside.
 
+This matters more than it sounds, because **several task specifications name
+their own reference files**. `TutorialPoroelasticity` ends with:
+
+> The reference implementation files are located at:
+> `inputFiles/poromechanics/PoroElastic_Terzaghi_base_direct.xml`,
+> `inputFiles/poromechanics/PoroElastic_Terzaghi_smoke.xml`
+
+The agent is told where the answer lives. It is not there:
+
+```
+$ qual audit
+TutorialPoroelasticity                           ok
+# blocked: poroelastic_terzaghi_base_direct.xml, poroelastic_terzaghi_smoke.xml,
+#          poroelastic_terzaghi_benchmark.xml, poroelastic_terzaghi_base_iterative.xml
+#          + src/docs/sphinx/basicExamples/poromechanics/Example.rst
+```
+
+Note the fourth one. `_base_iterative` is not mentioned by the specification and
+is not in the ground truth directory — variant expansion found it. That is the
+difference between blocking a filename and blocking an answer.
+
 `tasks/ground_truth/` is never mounted into a container at all — scoring happens
 on the host, after the container exits.
 
@@ -37,10 +58,10 @@ corpus. It is free and takes seconds.
 
 ## The proposer boundary — yours
 
-Your loop reads the results of rollouts and writes new adapter text. If
-ground-truth content reaches it, the adapter becomes a place to store the
-answer, and every score after that measures retrieval of something you already
-had.
+Your loop reads the results of rollouts and writes new harness configurations.
+If ground-truth content reaches it, the configuration becomes a place to store
+the answer, and every score after that measures retrieval of something you
+already had.
 
 The rule is simple: **the proposer may see the generated deck and the score, and
 nothing derived from the reference deck's contents.**
@@ -57,13 +78,15 @@ What is not allowed, and what it looks like when it goes wrong:
 |---|---|
 | read `tasks/ground_truth/` from `evolve/` | the obvious one |
 | pass `score.detail["attr_mismatches"]` to the proposer | mismatch text quotes reference attribute values |
-| write a task-specific value into the adapter (a mesh size, a bulk modulus) | the adapter is loaded for every task, so this is storing the answer key |
-| let the adapter name a specific ground-truth filename | same |
+| write a task-specific value into the configuration (a mesh size, a bulk modulus) | the same configuration runs on every task, so this is storing the answer key |
+| let the configuration name a specific ground-truth filename | same |
 
 The third one is the one that actually happens. It rarely looks like cheating
 while you are doing it — it looks like "the loop learned that this task needs
-`nx=280`". Write the test that catches it: a champion adapter should contain no
-numeric literal that appears in a reference deck and nowhere else.
+`nx=280`". Write the test that catches it: a champion configuration should
+contain no numeric literal that appears in a reference deck and nowhere else.
+That applies to every part of it, `files` and `workspace_files` included — the
+bundle is a much more comfortable hiding place than a prompt.
 
 ## If you find a leak
 

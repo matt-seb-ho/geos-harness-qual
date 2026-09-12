@@ -1,17 +1,31 @@
-"""Evaluate an adapter, and compare two of them honestly.
+"""Evaluate a harness configuration, and compare two of them honestly.
 
 The comparison rules here are not decoration. They are the difference between a
 result and a number.
 
+**Three outcomes, not one.** A configuration can be better in three different
+ways and they do not have to move together:
+
+``score``        mean TreeSim -- did the deck come out closer to the reference
+``zero_rate``    reliability -- how often a rollout produced nothing usable
+``cost`` / ``wall_seconds`` / ``tool_calls``
+                 efficiency -- what it took to get there
+
+All three are reported side by side and ``compare()`` gives the change in all
+three. Nothing here decides which one you are optimising; that is your call and
+it belongs in the write-up. A configuration that lifts the score 0.03 while
+doubling cost may be a good trade or a bad one, and the only wrong move is not
+noticing.
+
 **Paired, per task.** With four training tasks and two seeds you have eight
-numbers, and the between-task variance dwarfs any adapter effect. Comparing two
-adapters by their means is therefore close to meaningless. Compare them
-task-by-task on the *same* tasks at the *same* seeds and look at the
-differences. ``compare()`` does this and refuses when the two evaluations do not
-cover the same cells.
+numbers, and the between-task variance dwarfs any configuration effect.
+Comparing two configurations by their means is therefore close to meaningless.
+Compare them task-by-task on the *same* tasks at the *same* seeds and look at
+the differences. ``compare()`` does this and refuses when the two evaluations do
+not cover the same cells.
 
 **Failures are zeros and stay in.** A candidate that scores 0.9 on three tasks
-and produces nothing on the fourth is not a 0.9 adapter. Dropping unscorable
+and produces nothing on the fourth is not a 0.9 configuration. Dropping unscorable
 rollouts is the single easiest way to manufacture a positive result, and this
 project has watched it nearly happen: timed-out rollouts were once scored before
 their workspace finished copying, producing fabricated zeros that then nominated
@@ -20,13 +34,13 @@ their own tasks as search anchors.
 **Infrastructure failures are not model failures.** A container that could not
 start, an API 429, a missing image -- those are excluded from the score and
 counted separately, because averaging them into a candidate's score measures
-your network, not your adapter. ``EvalResult.harness_errors`` is that count, and
+your network, not your configuration. ``EvalResult.harness_errors`` is that count, and
 a comparison with any harness errors in it should be rerun, not reported.
 
 **A confidence interval, not a winner.** ``compare()`` returns a paired mean
 difference with a bootstrap interval. At n=4 tasks that interval will usually
 span zero. That is the honest answer at this sample size and saying so is worth
-more than picking whichever adapter came out ahead.
+more than picking whichever configuration came out ahead.
 """
 
 from __future__ import annotations
@@ -40,17 +54,18 @@ from typing import Any, Callable, Iterable, Sequence
 
 from qualkit import rollout as real_rollout
 from qualkit import tasks as task_registry
-from qualkit.adapter import Adapter
+from qualkit.config import HarnessConfig
 from qualkit.ledger import BudgetExceeded, BudgetGuard, Ledger
 from qualkit.rollout import Cost, Rollout
 
-#: Statuses that mean the harness failed, not the adapter. Never averaged in.
+#: Statuses that mean the infrastructure failed, not the configuration. Never
+#: averaged in.
 HARNESS_STATUSES = frozenset({"harness_error", "no_ground_truth", "scorer_error"})
 
 
 @dataclass(frozen=True)
 class EvalResult:
-    adapter_id: str
+    config_id: str
     rollouts: tuple[Rollout, ...]
     origin: str = ""
 
@@ -90,10 +105,24 @@ class EvalResult:
             total = total + r.cost
         return total
 
+    @property
+    def wall_seconds_per_rollout(self) -> float:
+        """Efficiency, the half of it you feel. Wall-clock, not billed time."""
+        scored = self.scored
+        return (sum(r.cost.wall_seconds for r in scored) / len(scored)) if scored else 0.0
+
+    @property
+    def tool_calls_per_rollout(self) -> float:
+        """The other half. Harness-reported, comparable across configurations."""
+        scored = self.scored
+        return (sum(r.cost.tool_calls for r in scored) / len(scored)) if scored else 0.0
+
     def render(self) -> str:
-        lines = [f"{self.adapter_id}  mean {self.mean:.4f}  "
+        lines = [f"{self.config_id}  score {self.mean:.4f}  "
                  f"zero-rate {self.zero_rate:.2f}  "
-                 f"n={len(self.scored)} rollouts  ~${self.cost.usd:.2f}"]
+                 f"{self.wall_seconds_per_rollout:.0f}s and "
+                 f"{self.tool_calls_per_rollout:.0f} tool calls per rollout  "
+                 f"n={len(self.scored)}"]
         if self.harness_errors:
             lines.append(f"  !! {self.harness_errors} harness errors, excluded from the score")
         for task, value in self.by_task().items():
@@ -101,8 +130,10 @@ class EvalResult:
         return "\n".join(lines)
 
     def to_json(self) -> dict[str, Any]:
-        return {"adapter_id": self.adapter_id, "origin": self.origin,
+        return {"config_id": self.config_id, "origin": self.origin,
                 "mean": self.mean, "zero_rate": self.zero_rate,
+                "wall_seconds_per_rollout": self.wall_seconds_per_rollout,
+                "tool_calls_per_rollout": self.tool_calls_per_rollout,
                 "by_task": self.by_task(), "harness_errors": self.harness_errors,
                 "cost": self.cost.to_json(),
                 "rollouts": [r.to_json() for r in self.rollouts]}
@@ -126,10 +157,10 @@ class Evaluator:
     results_root: Path | None = None
     verbose: bool = True
 
-    def evaluate(self, adapter: Adapter, tasks: Sequence[str] | None = None,
+    def evaluate(self, config: HarnessConfig, tasks: Sequence[str] | None = None,
                  seeds: Sequence[int] | None = None) -> EvalResult:
-        """Score one adapter on some tasks. Validates first; replays what it can."""
-        adapter.validate()  # free rejection, before anything is spent
+        """Score one configuration on some tasks. Validates first; replays what it can."""
+        config.validate()  # free rejection, before anything is spent
         task_ids = list(tasks) if tasks is not None else [
             t.task_id for t in task_registry.load_tasks("train")]
         seed_list = list(seeds if seeds is not None else self.seeds)
@@ -138,7 +169,7 @@ class Evaluator:
         done: list[Rollout] = []
         for task_id in task_ids:
             for seed in seed_list:
-                cached = self.ledger.get(adapter.cid, task_id, seed)
+                cached = self.ledger.get(config.cid, task_id, seed)
                 if cached is not None:
                     done.append(cached)
                 else:
@@ -153,7 +184,7 @@ class Evaluator:
         if pending:
             with ThreadPoolExecutor(max_workers=self.max_parallel) as pool:
                 futures = {
-                    pool.submit(self._one, adapter, task_id, seed): (task_id, seed)
+                    pool.submit(self._one, config, task_id, seed): (task_id, seed)
                     for task_id, seed in pending
                 }
                 for future in as_completed(futures):
@@ -161,9 +192,9 @@ class Evaluator:
                     if result is not None:
                         done.append(result)
 
-        return EvalResult(adapter.cid, tuple(done), adapter.origin)
+        return EvalResult(config.cid, tuple(done), config.origin)
 
-    def _one(self, adapter: Adapter, task_id: str, seed: int) -> Rollout | None:
+    def _one(self, config: HarnessConfig, task_id: str, seed: int) -> Rollout | None:
         if self.budget is not None:
             try:
                 self.budget.check()
@@ -171,7 +202,7 @@ class Evaluator:
                 if self.verbose:
                     print(f"    [{task_id} s{seed}] skipped: {exc}", flush=True)
                 return None
-        result = self.runner(adapter, task_id, seed,
+        result = self.runner(config, task_id, seed,
                              results_root=self.results_root, verbose=self.verbose)
         self.ledger.append(result)
         if self.budget is not None:
@@ -183,7 +214,13 @@ class Evaluator:
 
 @dataclass(frozen=True)
 class Comparison:
-    """A paired difference with an interval, plus everything needed to doubt it."""
+    """A paired difference with an interval, plus everything needed to doubt it.
+
+    ``mean_diff`` and ``ci`` are about the score. The other three deltas are the
+    price of it, and they are not summarised into a verdict on purpose: which
+    axis you are buying and which you are spending is a judgement, not an
+    arithmetic result.
+    """
 
     challenger: str
     incumbent: str
@@ -191,6 +228,9 @@ class Comparison:
     mean_diff: float
     ci: tuple[float, float]
     n_tasks: int
+    zero_rate_diff: float = 0.0
+    wall_seconds_diff: float = 0.0
+    tool_calls_diff: float = 0.0
     note: str = ""
 
     @property
@@ -201,9 +241,12 @@ class Comparison:
     def render(self) -> str:
         verdict = "excludes zero" if self.significant else "spans zero"
         lines = [f"{self.challenger} vs {self.incumbent}: "
-                 f"paired mean {self.mean_diff:+.4f}, "
+                 f"paired score {self.mean_diff:+.4f}, "
                  f"95% CI [{self.ci[0]:+.4f}, {self.ci[1]:+.4f}] ({verdict}), "
-                 f"n={self.n_tasks} tasks"]
+                 f"n={self.n_tasks} tasks",
+                 f"    reliability  zero-rate {self.zero_rate_diff:+.3f}",
+                 f"    efficiency   {self.wall_seconds_diff:+.0f}s and "
+                 f"{self.tool_calls_diff:+.1f} tool calls per rollout"]
         for task, delta in sorted(self.per_task.items(), key=lambda kv: kv[1]):
             lines.append(f"    {task:<48} {delta:+.4f}")
         if self.note:
@@ -242,5 +285,13 @@ def compare(challenger: EvalResult, incumbent: EvalResult, *,
     if len(shared) < 4:
         note = (note + " | " if note else "") + (
             f"n={len(shared)} tasks: the interval is wide by construction")
-    return Comparison(challenger.adapter_id, incumbent.adapter_id, per_task,
-                      mean_diff, (lo, hi), len(shared), note)
+    return Comparison(
+        challenger.config_id, incumbent.config_id, per_task, mean_diff, (lo, hi),
+        len(shared),
+        zero_rate_diff=challenger.zero_rate - incumbent.zero_rate,
+        wall_seconds_diff=(challenger.wall_seconds_per_rollout
+                           - incumbent.wall_seconds_per_rollout),
+        tool_calls_diff=(challenger.tool_calls_per_rollout
+                         - incumbent.tool_calls_per_rollout),
+        note=note,
+    )

@@ -1,9 +1,0 @@
-{
-  "stop_policy": {
-    "max_retries": 0,
-    "feedback_shape": "minimal",
-    "checks": ["parse"]
-  },
-  "origin": "seed: the minimal-primer condition. 5 lines, no procedure, no constraints.",
-  "parent_id": null
-}

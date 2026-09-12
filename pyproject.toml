@@ -1,7 +1,7 @@
 [project]
 name = "geos-harness-qual"
 version = "0.1.0"
-description = "Qualification task: evolve a simulator-grounding adapter for GEOS"
+description = "Qualification task: evolve the agent harness for GEOS deck authoring"
 requires-python = ">=3.11"
 # Deliberately none. Everything here is standard library, so the kit runs on a
 # bare interpreter and there is no dependency resolution between you and a
