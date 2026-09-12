@@ -140,14 +140,16 @@ HARNESSES: dict[str, Harness] = {
         supports=frozenset({"system_prompt", "tools", "disallowed_tools",
                             "max_turns", "files", "workspace_files", "settings",
                             "mcp_servers", "env", "retry", "extra_argv"}),
-        notes="Claude Code's own CLI. Hooks via settings, tools via MCP, the lot. "
-              "Verified here and comparable with our numbers. Start here.",
+        notes="Claude Code's own CLI. Supports settings-file hooks and MCP "
+              "servers. Verified here, and what the research harness uses, so "
+              "the numbers are comparable with ours. Use this one unless you "
+              "have a reason not to.",
     ),
     "acpx:claude": Harness(
         name="acpx:claude", argv=_acpx_argv("claude"), transcript="acpx-json",
         binary="acpx", supports=_ACP_SUPPORTS,
         notes="The same agent over the Agent Client Protocol. No settings-file "
-              "hooks; use retry instead.",
+              "hooks, so use config.retry instead.",
     ),
     "acpx:codex": Harness(
         name="acpx:codex", argv=_acpx_argv("codex"), transcript="acpx-json",

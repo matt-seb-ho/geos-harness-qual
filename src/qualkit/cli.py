@@ -9,7 +9,7 @@
     qual score <workspace> <task>   score a finished workspace, free
     qual inspect <workspace>        read one rollout: what it did, where the
                                     turns went, what it read. Free, and the
-                                    single most useful command here.
+                                    most useful command here.
     qual mock                       run the seed config on the mock runner, free
     qual baseline [--seeds 2]       measure the seed config on train (COSTS MONEY)
     qual run <task> [--seed 1]      one real rollout, for debugging (COSTS MONEY)
@@ -95,7 +95,9 @@ def cmd_doctor(args) -> int:
 
 def cmd_harnesses(args) -> int:
     from qualkit import agents
-    print("the base policy. Pick one and keep it fixed for the whole experiment.\n")
+    print("The agent that runs inside the container. Pick one and keep it "
+          "fixed: two configurations evaluated on different agents are not "
+          "comparable.\n")
     for name, ok, why in agents.probe():
         mark = "ok " if ok else "-- "
         print(f"{mark} {name:<16} {why}")
@@ -115,12 +117,15 @@ def cmd_tasks(args) -> int:
               f"{task.copy_ceiling:<6.2f} {task.task_id}")
         if task.note:
             print(f"{'':37}{task.note}")
-    print("\nseed: what the research harness scored, at two seeds. A prior, not "
-          "your baseline.")
+    print("\nseed: what the research harness scored, at two seeds. Background, "
+          "not your baseline --")
+    print("  it came from a configuration with a known contamination leak. See "
+          "README.md.")
     print("copy ceiling: the best score obtainable by copying a deck the agent can "
           "still read.")
-    print("  Not a cheat detector -- see docs/CONTAMINATION.md. `qual audit --deep` "
-          "re-measures it.")
+    print("  It measures how much of a score is retrieval rather than authoring. "
+          "See docs/CONTAMINATION.md;")
+    print("  `qual audit --deep` re-measures it.")
     return 0
 
 

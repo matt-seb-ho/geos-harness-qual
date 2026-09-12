@@ -1,250 +1,172 @@
 # geos-harness-qual
 
-A frozen coding agent, a scientific simulator it has to write an input file for,
-and a small bundle of text wrapped around the agent that you are allowed to
-change. Your job is to write the loop that changes it.
+A coding agent has to write a GEOS simulation input deck from a written
+description. The model is fixed; everything around it is yours to change. This
+repository contains the tasks, the container, the scorer and the evaluation
+machinery. You write the loop that changes the harness.
 
-Everything except that loop is already here and is not yours to edit: the seven
-tasks, the container, the read-only GEOS corpus with the answers filtered out of
-it, the scorer, the budget guard, and the comparison statistics.
-
-**Start with [`TASK.md`](TASK.md)** — what to deliver and how long to spend.
-This file is about how to drive the kit.
-
----
+**Start with [`TASK.md`](TASK.md)** — what to do and what we are looking for.
+This file explains how to drive the kit.
 
 ## Setup
 
 ```bash
-git clone <this repo> && cd geos-harness-qual
+git clone https://github.com/matt-seb-ho/geos-harness-qual && cd geos-harness-qual
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e '.[dev]'          # there are no runtime dependencies
-cp .env.example .env             # then paste in your own OpenRouter key
-pytest                           # ~50 tests, a few seconds, no network
+pip install -e '.[dev]'          # no runtime dependencies
+cp .env.example .env             # then paste in your OpenRouter key
+pytest                           # ~66 tests, a few seconds, offline
 qual doctor                      # what this machine can and cannot do
 ```
 
-`qual doctor` will tell you if the container is missing. On the lab server it is
-already built under the name `geos-eval` and `enroot` is the backend, because
-the docker daemon is root-only there. Nothing below the "costs money" line works
-without it; everything above does.
+On the lab server the container already exists as `geos-eval` and the backend is
+`enroot`, because the docker daemon is root-only there. Off that server you also
+need the GEOS source tree to build the corpus from: clone
+`https://github.com/GEOS-DEV/GEOS` and set `GEOS_SOURCE_DIR` to the checkout.
+Only XML, RST and the schema are read.
 
-If you are not on the lab server, you need the GEOS source tree to build the
-corpus from — `git clone https://github.com/GEOS-DEV/GEOS` and set
-`GEOS_SOURCE_DIR` at the checkout. Only XML, RST and the schema are read, so a
-shallow clone is enough.
-
-## The five-minute version
+## First five minutes
 
 ```bash
-qual tasks                # the seven tasks, their families, their split
-qual harnesses            # which coding agents this image can run
-qual mock                 # the seed config against the toy runner. Free.
-qual evolve --mock        # the stub loop in evolve/loop.py. Free.
+qual tasks                # the seven tasks, families, splits
+qual mock                 # the starting configuration on the mock runner, free
+qual evolve --mock        # the stub loop in evolve/loop.py, free
 ```
 
 Then open [`evolve/loop.py`](evolve/loop.py) and replace the stub.
 
-## What the pieces are
+## What you change
+
+Your loop edits a `HarnessConfig`. It covers everything about the harness except
+the model:
 
 | | |
 |---|---|
-| [`tasks/`](tasks/) | seven GEOS tasks: a natural-language specification per task, and the reference deck it is scored against. The reference decks are **never** mounted into a container. |
-| [`harness/seed/`](harness/seed/) | the starting configuration: a five-line prompt, the default tool set, one attempt, no hooks, no extra tools. What you must beat. |
-| `qualkit.agents` | which coding agent runs inside the container. Claude Code is the default and the only one verified here; `acpx` in the image also fronts codex and pi. |
-| `qualkit.inspect` | reads one rollout's transcript: what it did, where the turns went, what it read from the corpus. The most useful thing here. |
-| `qualkit.config` | the harness configuration — everything except the model — and the five things that are fixed. |
-| `qualkit.rollout` | one rollout: materialise the configuration, run the agent in a container against one task, score the result. The unit of cost. |
-| `qualkit.corpus` | builds the read-only `/geos_lib` tree each rollout sees, **per task**, with that task's answers and their variant siblings removed. |
-| `qualkit.scoring` | TreeSim: structural similarity between the generated deck and the reference, in [0, 1]. Vendored from the research repo; do not edit it. |
-| `qualkit.evaluate` | scores a configuration over tasks and seeds on all three axes, compares two of them pairwise with a bootstrap interval, and refuses comparisons that are not like-for-like. |
-| `qualkit.ledger` | append-only record of every rollout (so a crashed run resumes instead of paying twice) and a hard budget ceiling. |
-| `qualkit.mock` | a free, offline, deterministic fake agent. Develop against this. |
-| [`evolve/loop.py`](evolve/loop.py) | **yours.** |
+| `system_prompt` | appended to the agent's system prompt |
+| `tools` / `disallowed_tools` | which tools exist, which are withheld |
+| `files` | any files, mounted read-only at `/harness`: hook scripts, MCP servers, a cheatsheet the agent reads when it wants it, notes your loop accumulates |
+| `workspace_files` | files placed in `/workspace` before the agent starts |
+| `settings` | the harness's settings JSON. Hooks go here |
+| `mcp_servers` | new tools |
+| `max_turns`, `env`, `extra_argv` | turn limit, environment, any other CLI flag |
+| `retry` | shell checks run against the finished workspace, and what the agent is told when one fails |
 
-## What you may change: everything but the model
+There are no size limits. A configuration that raises the score while tripling
+the cost may or may not be worth having — that depends on what you are trying to
+improve, which is your decision, so the kit measures cost instead of capping it.
 
-The object your loop evolves is a `HarnessConfig` — the whole harness, not a
-prompt. `qualkit/config.py` is the authority; the shape of it:
+Five things are fixed, because varying them would make the comparison
+meaningless rather than because they are off-limits by taste:
 
-| | |
-|---|---|
-| `system_prompt` | text appended to the agent's system prompt |
-| `tools` / `disallowed_tools` | which tools exist at all, and which are withheld |
-| `files` | anything, mounted read-only at `/harness`: hook scripts, MCP servers, a cheatsheet the agent reads on demand, notes your loop accumulates |
-| `workspace_files` | files placed in `/workspace` before the agent starts — `CLAUDE.md`, a checklist, a template |
-| `settings` | the harness's own settings JSON. **Hooks live here** — `Stop`, `PostToolUse`, `PreToolUse` |
-| `mcp_servers` | new tools, as MCP server definitions |
-| `max_turns`, `env`, `extra_argv` | context budget, environment, any other CLI flag |
-| `retry` | a host-side loop: shell checks against the finished workspace, and what the agent is told when one fails |
+1. **The model.** The premise is improving the harness around a fixed model.
+2. **No subagent tools** (`Task`, `Agent`, `TaskCreate`). A rollout nominally on
+   one model once spawned a subagent on a different, larger model that accounted
+   for 85% of the bill. That breaks the fixed-model premise without any visible
+   sign.
+3. **No web tools** (`WebSearch`, `WebFetch`). Every GEOS deck is on GitHub and
+   the container has network access, so a fetch tool gets around the corpus
+   filtering entirely.
+4. **The task prompt.** It defines the deliverable, so it has to be identical
+   across configurations. This is why the instruction not to run the simulation
+   lives there and not in the configuration, where your loop could delete it.
+5. **The scorer and the reference decks.** Not reachable from inside a rollout;
+   scoring happens on the host after the container exits.
 
-**There are no size limits and no token budgets.** An earlier version of this
-kit imposed them; that was the wrong instinct. A configuration that wins on
-score while tripling cost is not obviously worse than one that does neither — it
-depends what you are optimising for, and deciding that is your job. So the kit
-measures the thing a budget was protecting instead, and reports it next to the
-score.
+`HarnessConfig.validate()` enforces 1–3 and raises before any rollout runs.
 
-### Better in which direction?
-
-Three, and they do not move together. `EvalResult` reports all three; `compare()`
-gives the change in all three:
+## What is measured
 
 ```
 cfg_1ecba84903ef  score 0.7312  zero-rate 0.00  687s and 64 tool calls per rollout  n=8
 ```
 
-- **performance** — mean TreeSim against the reference deck
-- **reliability** — how often a rollout produced nothing usable. The published
-  work says this is the one that matters here, and it is what a mean hides
-- **efficiency** — wall-clock, tool calls, dollars
+- **score** — mean structural similarity (TreeSim) to the reference deck, 0 to 1
+- **zero-rate** — fraction of rollouts that produced nothing usable
+- **wall-clock and tool calls** — per rollout
 
-Nothing in the kit decides which you are optimising. Say so before you run, and
-report what actually moved.
+`compare()` gives the change in all three between two configurations, paired per
+task with a bootstrap interval. Nothing in the kit decides which one you are
+optimising.
 
-### What is fixed, and why
+Three rules the evaluation enforces, each from a mistake made earlier in this
+project:
 
-Five things, all about whether the experiment means anything rather than about
-design taste:
+1. **Cost comes from the account balance, not the transcript.** On the rollout
+   used to check this kit, the transcript estimate was $0.028, the CLI's own
+   `total_cost_usd` field said $3.974, and the actual bill was $0.134. The `~$`
+   in progress output is for watching a run move, not for reporting.
+2. **Failures are zeros and stay in the average.** A configuration that scores
+   0.9 on three tasks and produces nothing on the fourth is not a 0.9
+   configuration.
+3. **Comparisons are paired per task.** Between-task variance is much larger
+   than the difference between two configurations, so comparing means is close
+   to meaningless. At four tasks the interval will usually include zero; that is
+   the honest answer at this sample size.
 
-1. **The model.** The premise is optimisation around a frozen model.
-2. **No subagent tools** (`Task`/`Agent`/`TaskCreate`). A rollout nominally on
-   one model once spawned a subagent on a different, stronger one that took 85%
-   of the bill — which breaks the frozen-model premise silently.
-3. **No web tools** (`WebSearch`/`WebFetch`). Every GEOS deck is public on GitHub
-   and the container has network, so a fetch tool routes straight around the
-   corpus filtering. (The research harness does *not* currently block these.
-   That is a difference, and arguably a bug on our side.)
-4. **The task prompt.** It defines the deliverable, so it must be identical
-   across configurations or two candidates are solving different tasks. That is
-   why the scope note ("write the deck, don't run the simulation") lives there
-   and not in the configuration, where your loop could delete it.
-5. **The scorer and the ground truth.** Not reachable from a rollout at all;
-   scoring happens on the host after the container exits.
+## What is in the container
 
-`HarnessConfig.validate()` enforces 1–3 and raises before any rollout is spent.
-
-## Choosing the base policy
-
-The agent inside the container is a *choice*, not a constant. `qual harnesses`
-lists what this image can run:
-
-```
-claude          Claude Code's own CLI — verified here, and what the research
-                harness runs, so your numbers are comparable with ours
-acpx:claude     the same agent over the Agent Client Protocol
-acpx:codex      acpx:pi          > also fronted by acpx, which is already in the image.
-acpx:openclaw   /  Unverified: flags are right, nobody has run one end to end.
-```
-
-Pick with `--harness` or `QUAL_HARNESS`. Two rules:
-
-- **Pick one and keep it fixed.** The harness is not a searchable component. Two
-  candidates evaluated on different harnesses are not comparable, and "my method
-  works on harness A" is a different claim from "my method works".
-- **`claude` is the safe default.** If you pick another one, budget an hour for
-  getting it to authenticate and write files, and check `parse_events` actually
-  reads its transcript — an unparsed transcript costs you the per-rollout
-  telemetry, though not the score or the spend limit.
-
-Comparing harnesses is a genuinely interesting second experiment (does an
-configuration found on one transfer to another?) and it is on the research programme's
-list. It is not this exercise; if you have budget left and want to try it, say
-so as a separate section.
-
-## What is in the container, and what is not
-
-Worth knowing before you design anything, because half of it is reachable and
-nothing is wired up for you.
-
-**The GEOS corpus**, read-only at `/geos_lib`, built per task with that task's
-answers removed:
+The GEOS corpus, read-only at `/geos_lib`, built separately for each task with
+that task's answers removed:
 
 ```
 /geos_lib/inputFiles/        ~743 example decks (.xml)
-/geos_lib/docs/              ~98 documentation pages (.rst) — user guide,
-                             tutorials, basic and advanced examples
-/geos_lib/schema/schema.xsd  the authoritative element and attribute list
+/geos_lib/docs/              ~98 documentation pages (.rst)
+/geos_lib/schema/schema.xsd  the list of elements and attributes GEOS accepts
 ```
 
-That is the curated tree, not the full checkout: no C++, no build system, no
-tests. The research harness mounts 4,462 files and 435 MB; this is 842 files and
-4 MB, which is most of why a rollout here takes 687 s rather than 1,453 s.
+This is a curated subset, not the full checkout: no C++, no build system, no
+version control history. The research harness mounts 4,462 files and 435 MB;
+this is 842 files and 4 MB, which is most of why a rollout here takes about 690
+seconds rather than 1,450.
 
-**Tools in the image**: `xmllint`, `python3`, `uv`, `node`, `git`, a normal
-shell. So schema validation works today:
+Also installed: `xmllint`, `python3`, `uv`, `node`, `git`, a normal shell. So
+schema validation works:
 
 ```bash
 xmllint --noout --schema /geos_lib/schema/schema.xsd inputs/deck.xml
 ```
 
-On a deck it rejects, that prints the **complete list of elements GEOS will
-accept at that point** — the richest feedback signal available in this setup,
-and free. Nothing in the seed configuration uses it. Telling the agent to use
-it, or making it a `Stop` hook, or wrapping it as an MCP tool, are all things
-your loop could do.
+On a deck it rejects, that prints the complete list of elements GEOS will accept
+at that point, which is the most detailed feedback available here, and it is
+free. The starting configuration does not use it.
 
-**Not in the container**, deliberately:
+Not present, deliberately: the `geosx` binary, a retrieval server, an `xmllint`
+MCP wrapper, and the reference decks.
 
-| | why |
-|---|---|
-| the `geosx` binary | execution is out of the loop — see below |
-| a retrieval / RAG server | the research harness has one; the corpus here is 4 MB, so `Grep` and `Glob` reach all of it. Building retrieval over it is a legitimate thing for a configuration to do |
-| an `xmllint` MCP wrapper | the binary is there; the tool wrapper is not |
-| ground truth | never mounted; scoring happens on the host |
+### The simulator does not run
 
-## The simulator does not run
+There is no GEOS binary in the container. The agent writes a deck and cannot
+execute it, which matches the setup the published SIGA results used.
 
-There is no GEOS binary in the container. The agent authors a deck and cannot
-execute it, which matches the setup the published SIGA results were measured on.
+This is the largest single factor in what a rollout costs. When the simulator
+was reachable, agents ran 7.3 solves per rollout, for output that nothing reads —
+the deck is scored structurally against a reference. Removing it cut wall-clock
+41% and cost 31%. Keeping the binary but refusing non-validation calls was
+worse: solve attempts doubled and cost rose 59%, because a refusal prompts
+another variation rather than ending the attempt.
 
-This is deliberate, and it is the single biggest lever on what a rollout costs.
-When the simulator *was* reachable, agents ran 7.3 solves per rollout — for
-output nothing reads, since the deck is scored structurally against a reference.
-Removing it cut wall-clock 41% and cost 31%. A later attempt to keep the binary
-but block non-validation use made things *worse*: solve attempts doubled, cost
-rose 59%, because a refusal invites another variation rather than ending the
-line of inquiry.
+Schema validation is the substitute, and it is free. If your method needs
+execution feedback, describe it in your note as the next experiment.
 
-So: not mounted at all. Schema validation is the substitute and it is free. If
-your method wants execution feedback, that is a real design discussion — put it
-in the note as the experiment you would run next, with what it would cost.
+## Choosing the agent
 
-## Spending money
+The agent inside the container is a choice. `qual harnesses` lists what this
+image can run:
 
-Everything above this line is free. Below it, a rollout is roughly **$0.11–0.13
-billed and 11–13 minutes** — measured on this kit on 2026-09-12 against account
-deltas, and in the same band the research harness reports.
-
-**You bring your own key, so keep this small.** A couple of dollars is a
-complete experiment; `TASK.md` has two worked shapes, the cheaper one costing
-about $1.80. Put a hard per-key limit on your OpenRouter key, and pass
-`--budget` to everything that spends.
-
-```bash
-qual baseline --seeds 2        # seed config, 4 train tasks x 2 seeds = 8 rollouts
-qual run <task>                # one rollout, for debugging
-qual evolve --budget 9         # your loop, with a hard ceiling
-qual report runs/ledger.jsonl  # re-derive every number from the ledger, free
+```
+claude          Claude Code's own CLI. Verified here, and what the research
+                harness uses, so the numbers are comparable with ours.
+acpx:claude     the same agent over the Agent Client Protocol
+acpx:codex      also available through acpx, which is in the image.
+acpx:pi         Unverified: the flags are right, nobody has run one end to end.
 ```
 
-Three habits the kit tries to make automatic, all of them bought with real
-mistakes on this project:
-
-1. **Price from the account, never from the transcript.** On the smoke rollout
-   that validated this kit, the transcript estimate was **$0.028** and the bill
-   was **$0.134** — under by 4.7×, because the gateway bills the resent
-   conversation and the provider reported no cache-read tokens. The research
-   repo hit the same wall from the other direction, over-predicting 2.25× on a
-   different provider. A transcript cannot price a run. `BudgetGuard` reads
-   `/api/v1/credits`; the `~$` in progress output is only for watching a run
-   move.
-2. **Failures are zeros and stay in the average.** A configuration that scores
-   0.9 on three tasks and produces nothing on the fourth is not a 0.9
-   configuration.
-3. **Never compare means.** Between-task variance dwarfs the configuration
-   effect at this sample size. `compare()` is paired, per task, with an interval — and at
-   four tasks that interval will usually span zero. That is the honest answer.
+Select with `--harness` or `QUAL_HARNESS`. **Pick one and keep it fixed** — two
+configurations evaluated on different agents are not comparable. Take `claude`
+unless you have a reason not to; the others need their own credentials, and ACP
+has no settings-file hooks, so a configuration built on hooks will do nothing
+there. `agents.get(name).unsupported(config)` reports that rather than letting
+it pass silently.
 
 ## Contamination
 
@@ -252,51 +174,88 @@ The agent must not be able to read the answer. For each task, three things are
 removed from its corpus: the reference decks (`.xml` and `.geos`), their variant
 siblings anywhere in the GEOS tree (given `Foo_base.xml` the tree usually also
 has `Foo_smoke.xml`, which shares nearly every parameter), and the documentation
-page the specification was written from. Hardlinks, not symlinks — a symlink can
-be followed out of a read-only mount. It is the rule SIGA's published runs used;
-`docs/CONTAMINATION.md` states it exactly.
+page the description was written from. This is the rule SIGA's published runs
+used; [`docs/CONTAMINATION.md`](docs/CONTAMINATION.md) states it exactly.
 
-It matters more than it sounds: several specifications **name their own
-reference files**. `TutorialPoroelasticity` ends by pointing at
-`inputFiles/poromechanics/PoroElastic_Terzaghi_base_direct.xml`. It is not
-there — nor are `_smoke`, `_benchmark`, or `_base_iterative`, which the spec
-never mentions and which is not in the ground-truth directory either. Variant
-expansion found it.
+It matters more than it sounds. Several task descriptions name their own
+reference files: `TutorialPoroelasticity` ends by pointing at
+`inputFiles/poromechanics/PoroElastic_Terzaghi_base_direct.xml`. That file is
+not there, and neither is `_base_iterative`, which the description never
+mentions and which is not in the reference directory either.
+
+The corpus is also assembled from an include list rather than produced by
+deleting files from a copy of the GEOS checkout. The research harness does the
+latter, which copies `.git` along with it, and in its 40-task screen 29 tasks
+recovered their own removed decks with `git show`. A file that is removed but
+recoverable is not removed.
 
 ```bash
-qual audit           # must print "clean" before you believe any score
-qual audit --deep    # also re-measures the copy ceiling. Minutes, free.
+qual audit           # must print "clean" before you trust a score
+qual audit --deep    # also measures what copying could achieve. Minutes, free.
 ```
 
-The **copy ceiling** is the part a filename rule cannot settle: the best TreeSim
-obtainable by copying a deck the agent can still read. Reading a comparable
-example is the intended workflow, so this is not a cheat detector — it is a
-floor on what retrieval alone achieves. The seven tasks sit at **0.43–0.78**
-against a target of 1.0, so authoring still has to do most of the work. One task
-was cut for reaching 0.856. And on three of the four training tasks the ceiling
-is *above* what the seed harness scores, which is the most obvious improvement
-in this kit lying around unclaimed.
+`qual audit --deep` scores every deck still readable in a task's corpus against
+that task's reference. Reading a comparable example is the intended workflow, so
+this is not a cheat detector — it tells you how much of a score is retrieval
+rather than authoring. The seven tasks sit between 0.43 and 0.78 against a
+target of 1.0. One task was removed from the set for reaching 0.856.
 
-The agent also has no web tools. `WebSearch` and `WebFetch` are disallowed
-because every GEOS example deck is public on GitHub, and a fetch tool is a
-route straight around the corpus filter. (The research harness does not
-currently block them. That is a difference, and arguably a bug on our side.)
+The same rule applies to your loop: **do not put reference decks in front of the
+proposer.** `qualkit.scoring.diagnose()` gives feedback derived only from the
+generated deck.
 
-The same rule applies to your loop: **never put ground truth in front of the
-proposer.** `qualkit.scoring.diagnose()` gives you feedback derived only from
-the generated deck. A contaminated run is not a weak result, it is no result.
-See [`docs/CONTAMINATION.md`](docs/CONTAMINATION.md).
+## Reading a rollout
 
-## Where the numbers in `qual tasks` come from
+```bash
+qual inspect runs/<config>-s1-<task>
+```
 
-The `2026-09-11 seed` column is what the *research* harness scored on each task
-at two seeds, from an 80-rollout screen over 40 tasks. Read it as a prior, not a
-baseline: that run used a much larger corpus, a retrieval server and a stop
-hook, none of which are here. Your `qual baseline` is the number your result is
-measured against.
+Prints the tool mix, the call-by-call trace with the argument of each call,
+which parts of the corpus the agent actually opened, and the deck it produced
+with its weakest sections named. This is the most useful command here. See
+`TASK.md`.
 
-Those numbers are also why there are seven tasks and not forty-six. Twelve tasks
-in the pool score a flat 1.000 at both seeds — no headroom, so no candidate can
-beat the seed on them — and several never produce a deck at all. These seven are
-the ones with measured room to move *and* a copy ceiling low enough that the
-room has to be earned by authoring.
+## The tasks
+
+`qual tasks` prints them with two numbers each. The first is what the research
+harness scored at two seeds in a 40-task screen. Treat it as background, not as
+your baseline: it came from a different configuration, and that configuration
+had the git-history leak described above, so for four of these seven tasks it is
+an upper bound on a contaminated run. Your `qual baseline` is the number your
+result is compared against.
+
+The second is the copy ceiling. Both are explained in `docs/CONTAMINATION.md`.
+
+Seven tasks rather than forty-six because the rest are unusable: twelve score a
+flat 1.000 at both seeds, several never produce a deck, and one is degenerate on
+the copy ceiling. These seven have measured room to improve.
+
+## Commands
+
+| | |
+|---|---|
+| `qual doctor` | can this machine run a rollout |
+| `qual tasks` | the seven tasks |
+| `qual harnesses` | which agents this image can run |
+| `qual corpus` | build the per-task corpora |
+| `qual audit [--deep]` | check for leaks; `--deep` measures the copy ceiling |
+| `qual inspect <ws>` | read one rollout |
+| `qual score <ws> <task>` | score a finished workspace |
+| `qual mock` | the starting configuration on the mock runner |
+| `qual run <task>` | one real rollout |
+| `qual baseline` | the starting configuration on the train split |
+| `qual evolve [--mock]` | your loop |
+| `qual report <ledger>` | re-derive every number from the ledger |
+
+Everything above `qual run` is free.
+
+## Layout
+
+```
+tasks/          seven task descriptions and their reference decks
+harness/seed/   the starting configuration
+src/qualkit/    tasks, config, agents, corpus, rollout, scoring, evaluate,
+                ledger, inspect, mock, llm, cli
+evolve/loop.py  yours
+tests/          offline, a few seconds
+```
