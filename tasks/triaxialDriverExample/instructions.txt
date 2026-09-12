@@ -1,0 +1,30 @@
+ Specification for XML Configuration: Triaxial Driver Extended Drucker-Prager Example (basic/triaxialDriver)
+
+**1. Simulation Type and Physical Problem**
+Create an XML configuration for a GEOS TriaxialDriver simulation that models a conventional triaxial compression test on a rock specimen. The simulation investigates the elastoplastic deformation behavior of a confined, homogeneous rock sample using the Extended Drucker-Prager constitutive model with strain hardening. The physical problem involves applying a constant confining pressure in the radial direction while compressing the sample axially through controlled strain increments, including loading/unloading cycles to capture both plastic loading and elastic unloading behavior. The simulation runs as a standalone constitutive driver test (not a full finite-element simulation) to calibrate material parameters against laboratory experimental data.
+
+**2. Solver Parameters and Settings**
+Configure the TriaxialDriver as a solo task within the Tasks block and schedule it as a SoloEvent in the Events queue. Set the following driver-specific parameters: specify `mode="mixedControl"` to enable axial strain control with radial stress control; set `axialControl="strainFunction"` to reference the axial strain table function; set `radialControl="stressFunction"` to reference the radial stress table function; define `initialStress="-10.e6"` to establish an isotropic compressive initial stress state of 10 MPa consistent with the confining pressure; set `steps="200"` to define the number of load increments; and specify `output="simulationResults.txt"` to define the ASCII output filename for results.
+
+**3. Mesh Requirements**
+Include a minimal dummy mesh definition to satisfy GEOS initialization checks, as spatial discretization is not required for the TriaxialDriver. Create an InternalMesh in the Mesh section consisting of a single hexahedral element (8 nodes, 1 element) with arbitrary dimensions. Assign this mesh to a CellElementRegion named "dummy" in the ElementRegions section, mapping to cellBlock01. No specific cell sizes or spatial extents are critical, but the mesh must exist to pass validation checks.
+
+**4. Material Properties and Constitutive Models**
+Define a solid material using the ExtendedDruckerPrager constitutive model. Specify the following mechanical properties in SI units: initial friction angle (`defaultInitialFrictionAngle`), residual friction angle (`defaultResidualFrictionAngle` - must be larger than the initial angle to activate strain hardening), cohesion (`defaultCohesion`), hardening rate (`defaultHardening="0.0001"`), and dilation ratio (`defaultDilationRatio="1.0"` for associated plastic flow). Also include standard material properties: density, viscosity, bulk modulus, and shear modulus. Ensure the residual friction angle exceeds the initial friction angle to impose strain hardening behavior.
+
+**5. Initial and Boundary Conditions**
+Set initial conditions through the TriaxialDriver's `initialStress` parameter with value -10.0e6 Pa (compressive), ensuring static equilibrium at the first timestep. Define loading conditions through two TableFunction objects: a strainFunction controlling axial compression with negative strain values (including two loading/unloading cycles), and a stressFunction maintaining constant confining pressure in the radial direction at -10.0e6 Pa. All stress and strain values must follow the GEOS sign convention where compression is negative.
+
+**6. Numerical Method Specifications**
+The simulation uses the TriaxialDriver's built-in simple time-stepping algorithm to advance through 200 load steps. The driver automatically handles the nonlinear solution procedure using Newton iterations for the elastoplastic constitutive integration. Convergence is monitored via residual norms as indicated in the output file columns. No separate nonlinear solver or linear solver blocks are required in the XML for this specific driver.
+
+**7. Output Requirements**
+Configure the simulation to write results to an ASCII text file named "simulationResults.txt". The output file must contain a header line identifying nine data columns: time, axial_strain, radial_strain_1, radial_strain_2, axial_stress, radial_stress_1, radial_stress_2, newton_iter, and residual_norm. Each row represents one timestep starting from initial conditions. Post-processing requires extracting stress-strain curves, p-q diagrams, and volumetric strain vs. axial strain relationships from this file.
+
+**8. External Data Files**
+Include references to the following external table files using these exact relative paths:
+- `inputFiles/triaxialDriver/tables/time.geos` (coordinate file providing time values for both loading functions)
+- `inputFiles/triaxialDriver/tables/axialStrain.geos` (voxel file providing axial strain values corresponding to time points, including loading/unloading cycles)
+- `inputFiles/triaxialDriver/tables/radialStress.geos` (voxel file providing constant radial stress values corresponding to time points)
+
+The strainFunction table must use time.geos as its coordinate file and axialStrain.geos as its voxel file. The stressFunction table must use time.geos as its coordinate file and radialStress.geos as its voxel file. Both functions interpolate values based on the variable "time".

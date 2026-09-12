@@ -1,0 +1,38 @@
+Based on the RST documentation for the AdvancedExamplePureThermalDiffusionWellbore, here is the comprehensive natural language specification for generating the XML configuration file:
+
+**1. Simulation Type and Physical Problem**
+Configure a pure thermal diffusion simulation modeling heat transfer around a wellbore using the thermal single-phase flow solver. The physical problem represents radial thermal diffusion where temperature propagates outward from the wellbore surface. To achieve pure thermal diffusion, explicitly disable thermal convection and fluid flow effects by setting fluid pressure to zero and fluid volumetric heat capacity to a negligible value (effectively zero). The simulation should model temperature diffusion from an inner wellbore surface at radius $R_{in}$ with uniform temperature $T_{in}$ toward a far-field boundary, producing a radial temperature field $T(r)$ that matches the analytical solution $T(r) = T_{in}\sqrt{\frac{R_{in}}{r}}erfc(\frac{r-R_{in}}{2\sqrt{c_{T}t}})$, where $c_{T}$ represents the thermal diffusion coefficient of the rock (thermal conductivity divided by rock volumetric heat capacity).
+
+**2. Solver Parameters and Settings**
+Use the thermal single-phase flow solver configured for transient thermal diffusion analysis. Define the thermal diffusion coefficient $c_{T}$ based on the ratio of thermal conductivity to volumetric heat capacity of the rock. Configure time-stepping parameters to advance the simulation from initial time $t=0$ through sufficient duration to observe the radial diffusion process. Ensure the solver accounts for the coupling between thermal transfer and fluid flow, even though fluid flow effects are numerically suppressed.
+
+**3. Mesh Requirements**
+Create a two-dimensional mesh suitable for modeling radial coordinates around a cylindrical wellbore. The mesh must support face-based boundary condition application via the faceManager. Include an inner boundary at radius $R_{in}$ representing the wellbore surface and an outer boundary representing the far-field region. The mesh should accommodate radial coordinate $r$ extending from $R_{in}$ outward. Use appropriate cell sizing to resolve the thermal gradient near the wellbore wall where temperature changes are most rapid.
+
+**4. Material Properties and Constitutive Models**
+Include the following constitutive models in the Constitutive section:
+- **SolidInternalEnergy**: Define the volumetric heat capacity of the rock medium surrounding the wellbore.
+- **SinglePhaseConstantThermalConductivity**: Specify the constant thermal conductivity of the rock medium.
+- **ThermalCompressibleSinglePhaseFluid**: Set the volumetric heat capacity of the fluid to a negligible value (approaching zero) to eliminate thermal convection effects, and configure fluid compressibility parameters as needed for the single-phase flow framework while maintaining zero pressure conditions.
+
+**5. Initial and Boundary Conditions**
+In the FieldSpecifications section, implement:
+- **Temperature Boundary Conditions**: Apply Dirichlet face boundary conditions using the faceManager for:
+  - The curved inner surface of the wellbore at $r = R_{in}$ with imposed temperature $T_{in}$
+  - The far-field outer boundary with specified temperature
+  - Initial temperature distribution throughout the domain
+- **Pressure Specifications**: Despite modeling pure thermal diffusion, define fluid pressure specifications throughout the entire domain (initial conditions and boundaries) set exactly to zero to satisfy the solver's coupled physics requirements while effectively decoupling fluid flow from the thermal solution.
+
+**6. Numerical Method Specifications**
+Configure the solver to handle the parabolic nature of the thermal diffusion equation using appropriate time integration schemes. Ensure numerical stability for the thermal diffusion coefficient $c_{T}$ derived from the material properties. The method should accurately propagate the temperature front radially outward from the wellbore surface while maintaining the imposed temperature boundary conditions at both the wellbore wall and far-field boundaries.
+
+**7. Output Requirements**
+Configure output to capture the temperature field $T(r)$ as a function of radial coordinate $r$ at various time steps to enable comparison with the analytical solution from Wang and Papamichos (1994). Include radial coordinate positions and corresponding temperature values sufficient to generate profiles showing the $\sqrt{\frac{R_{in}}{r}}$ decay characteristic and the error function complement behavior defined in the analytical solution.
+
+**8. External Data Files**
+No external input files are required for this benchmark example. All necessary configuration data is self-contained within the following internal GEOS XML files:
+- `inputFiles/singlePhaseFlow/thermalCompressible_2d_base.xml`
+- `inputFiles/singlePhaseFlow/thermalCompressible_2d_benchmark.xml`
+
+The integrated test file is located at:
+- `inputFiles/singlePhaseFlow/thermalCompressible_2d_smoke.xml`

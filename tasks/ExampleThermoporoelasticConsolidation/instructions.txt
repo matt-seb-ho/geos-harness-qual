@@ -1,0 +1,87 @@
+**Simulation Type and Physical Problem**
+
+Create an XML configuration for a one-dimensional thermoporoelastic consolidation simulation using GEOS. This is a fully coupled multiphysics problem involving solid deformation, single-phase fluid flow, and heat transfer in saturated porous media. The model represents a soil column subjected to mechanical loading and thermal boundary conditions to validate against the analytical solution of Bai (2005). The physical scenario consists of a saturated soil column with an initial temperature of 0 degrees Celsius that is insulated and sealed on all boundaries except the top surface. The top surface is subjected to a surface traction stress of 1 Pa, a fixed temperature of 50 degrees Celsius, and a fixed pore pressure of 0 Pa. The system experiences coupled thermo-poromechanical effects including initial settlement due to fluid drainage and matrix compression, followed by thermal expansion as heat diffuses into the domain.
+
+**Required Solver Parameters and Settings**
+
+Define three separate solvers within the `Solvers` section:
+
+1. **Solid Mechanics Solver**: Create a solver of type `SolidMechanicsLagrangianFEM` named `solidMechSolver` to handle the mechanical deformation.
+
+2. **Flow Solver**: Create a solver of type `SinglePhaseFVM` named `flowSolver` to handle the single-phase fluid flow.
+
+3. **Coupling Solver**: Create a solver of type `SinglePhasePoromechanics` named `thermoPoroSolver` that binds the mechanics and flow solvers. Configure this coupling solver with the following critical parameters:
+   - Set the `isThermal` flag to `1` to enable temperature degree of freedom and activate thermal coupling.
+   - Set the `couplingType` to `FullyImplicit` to enforce a fully coupled, fully implicit solution strategy.
+   - This solver manages three degrees of freedom: cell-centered pressure, cell-centered temperature, and mechanical displacements at the mesh nodes.
+   - The solver solves governing equations consisting of mass conservation, energy balance, and linear momentum balance (where total stress includes both pore pressure and thermal contributions).
+
+**Mesh Requirements**
+
+Construct a one-dimensional column mesh oriented as a slab in the y-direction. The mesh must be a 3D grid capable of supporting 3D displacement degrees of freedom but geometrically representing a column. Define node sets for all six boundary faces with the following exact names: `xneg`, `xpos`, `yneg`, `ypos`, `zneg`, and `zpos`. These sets will be used to apply boundary conditions, where `ypos` represents the top surface and `yneg` represents the bottom of the column.
+
+**Material Properties and Constitutive Models**
+
+In the `Constitutive` section, specify the following models and parameters for a homogeneous, isotropic domain:
+
+- **Solid Mechanical Model**: Use `ElasticIsotropic` with:
+  - Young's modulus (`E`): 6000.0 Pa
+  - Poisson's ratio (`ν`): 0.4
+  - Thermal expansion coefficient (`α`): 9.0×10⁻⁷ T⁻¹
+  - Note: Solid density is constant (specific value arbitrary as gravity is set to zero).
+
+- **Porosity Model**: Use `BiotPorosity` with:
+  - Porosity (`φ`): 0.20
+  - Biot's coefficient (`b`): 1.0 (calculated from `grainBulkModulus`)
+  - This model updates porosity as a function of strain increment, pore pressure change, and temperature change.
+
+- **Internal Energy Model**: Use `SolidInternalEnergy` with:
+  - Volumetric heat capacity (`ρC`): 167.2×10³ J/(m³·K)
+  - `referenceTemperature`: Set to the initial temperature (0°C)
+
+- **Fluid Model**: Use `ThermalCompressibleSinglePhaseFluid` with:
+  - Constant density (pressure and temperature independent)
+  - Viscosity (`μ`): 1×10⁻³ Pa·s (constant, pressure and temperature independent)
+
+- **Permeability Model**: Use `ConstantPermeability` with:
+  - Permeability (`k`): 4.0×10⁻⁹ m²
+
+- **Thermal Conductivity Model**: Use `SinglePhaseConstantThermalConductivity` with:
+  - Thermal conductivity (`kᵀ`): 836 J/(m·s·K)
+
+**Initial and Boundary Conditions**
+
+In the `FieldSpecifications` section, define:
+
+- **Initial Conditions** (set `initialCondition` attribute to `1` for all initial field specifications):
+  - Displacements: Initialize to zero
+  - Effective stress: Initialize to zero
+  - Pore pressure: Initialize to 0 Pa throughout the domain
+  - Temperature: Initialize to 0°C throughout the domain
+
+- **Boundary Conditions**:
+  - **Zero Displacement**: Apply zero-displacement constraints on the lateral and bottom boundaries using the node sets `xneg`, `xpos`, `yneg`, `zneg`, and `zpos`. Note that for this slab-oriented geometry, `yneg` receives the zero-displacement condition while `ypos` (the top) does not.
+  - **Top Surface Loading** (applied to `ypos`):
+    - Traction: Apply a surface traction stress of 1 Pa
+    - Temperature: Fix at 50°C (non-isothermal boundary condition)
+    - Pore Pressure: Fix at 0 Pa
+  - **Insulation and Sealing**: All boundaries except the top surface (`ypos`) must be insulated (no heat flux) and sealed (no fluid flow).
+
+**Numerical Method Specifications**
+
+- Set the gravity vector to 0 (zero gravity) in the XML configuration.
+- Use the fully implicit coupling strategy as specified in the solver section.
+- The simulation should capture the coupled dynamics where the total stress includes contributions from both pore pressure and temperature.
+
+**Output Requirements**
+
+Configure the **TimeHistory** output feature to record and output the following fields for comparison with analytical solutions:
+- Displacements (for settlement analysis)
+- Pressure
+- Temperature
+
+**External Data Files**
+
+No external input files are required for this simulation. All necessary configuration parameters are self-contained within the GEOS input files. The complete example is distributed across the following two files:
+- `inputFiles/thermoPoromechanics/ThermoPoroElastic_consolidation_base.xml`
+- `inputFiles/thermoPoromechanics/ThermoPoroElastic_consolidation_benchmark_fim.xml`

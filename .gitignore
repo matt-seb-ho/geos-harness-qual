@@ -1,0 +1,8 @@
+runs/
+runs-mock/
+adapter/champion/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/

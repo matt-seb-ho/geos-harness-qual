@@ -1,0 +1,22 @@
+[project]
+name = "geos-harness-qual"
+version = "0.1.0"
+description = "Qualification task: evolve a simulator-grounding adapter for GEOS"
+requires-python = ">=3.11"
+# Deliberately none. Everything here is standard library, so the kit runs on a
+# bare interpreter and there is no dependency resolution between you and a
+# first result. Add what your method needs.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+qual = "qualkit.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

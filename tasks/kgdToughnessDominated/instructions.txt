@@ -1,0 +1,74 @@
+**Natural Language Specification for Toughness-Dominated KGD Hydraulic Fracture Simulation**
+
+**1. Simulation Type and Physical Problem**
+Create an XML configuration for a plane-strain hydraulic fracture propagation simulation modeling a toughness-dominated KGD (Kristianovich-Geertsma-de Klerk) fracture. The simulation models fluid injection into a vertical fracture with rectangular cross-section propagating in an infinite, homogeneous, isotropic elastic medium. The problem assumes:
+- Two-dimensional plane-strain conditions with a vertical, impermeable fracture surface
+- No fluid leakoff from the fracture
+- Incompressible lubrication flow governed by mass conservation and Poiseuille law
+- Toughness-dominated propagation regime where fracture growth occurs when the stress intensity factor exceeds rock toughness \(K_{Ic}\)
+- Ultra-low fluid viscosity (0.001 cp) to ensure toughness-dominated behavior rather than viscosity-dominated behavior
+- Injection period from time 0 to \(t_{max}\) with constant volumetric injection rate \(Q_0 = 10^{-4} \, \text{m}^3/\text{s}\)
+
+**2. Solver Configuration**
+Configure four coupled solvers within a `Hydrofracture` solver wrapper:
+
+- **SurfaceGenerator**: Define rock toughness parameter \(K_{Ic} = 1 \, \text{MPa}\cdot\text{m}^{1/2}\) to control fracture propagation based on critical stress intensity.
+
+- **SolidMechanicsLagrangianFEM**: Configure for rock and fracture deformation mechanics. Specify `targetRegions` to include both the continuum rock region and the discrete fracture region. Define `contactRelationName` for the contact constitutive behavior and `solidMaterialNames` for the elastic solid materials.
+
+- **SinglePhaseFVM**: Configure the finite volume solver for single-phase fluid flow within the fracture domain using the lubrication approximation.
+
+- **Hydrofracture (Parent Solver)**: Combine the above solvers using a fully coupled scheme. Set `couplingTypeOption` to "FIM" (Fully Implicit Method) to handle the strong coupling between fluid pressure, fracture aperture, and rock deformation.
+
+**3. Mesh Specifications**
+Use the internal mesh generator with the following specifications:
+- **Domain Dimensions**: Create a domain where the x-dimension (perpendicular to fracture plane) is at least 10 times the expected final fracture half-length to minimize boundary effects. The y-dimension (along the fracture plane) should be 2 times the final fracture half-length.
+- **Vertical Discretization**: Include exactly 2 layers in the z-axis (vertical direction) to ensure proper node-based fracture propagation criterion matching with analytical solutions.
+- **Mesh Bias**: Apply a bias parameter `xBias` in the x-direction to refine mesh elements near the fracture plane (x=0) while allowing coarser elements toward the far-field boundaries.
+- **Element Type**: Use hexahedral or quadrilateral elements appropriate for 2D plane-strain analysis with through-thickness discretization.
+
+**4. Constitutive Models and Material Properties**
+Define the following constitutive behaviors:
+
+- **CompressibleSinglePhaseFluid** (Fluid Model): 
+  - Set default/reference viscosity to \(\mu = 10^{-6} \, \text{Pa}\cdot\text{s}\) (0.001 cp) for the ultra-low viscosity incompressible fluid
+  - Define fluid compressibility and density (density required for mass injection rate calculations)
+
+- **ElasticIsotropic** (Solid Model):
+  - Young's modulus \(E = 30 \, \text{GPa}\)
+  - Poisson's ratio \(\nu = 0.25\)
+  - Define rock density (value arbitrary as gravity effects are ignored in this example)
+
+**5. Initial and Boundary Conditions**
+
+*Initial Conditions:*
+- **Initial Fracture**: Define a geometric nodeset representing a small initial fracture area (initial notch) where propagation begins. Apply a `FieldSpecification` setting `ruptureState` to this nodeset to initialize the fracture.
+- **Fracture Plane**: Define a separable nodeset outlining the predefined fracture plane (the x-y plane at z=0 or appropriate coordinate) to constrain propagation to this surface. Apply initial `FieldSpecification` conditions to mark this as the potential fracture path.
+
+*Boundary Conditions:*
+- **Fluid Injection**: Apply a mass source flux boundary condition to a sub-area of the initial fracture representing the injection point. 
+  - Specify only half the total injection rate (modeling one symmetric wing of the KGD fracture)
+  - The mass injection rate scale should be set to \(Q_0 \cdot \rho_f / 2\), where \(Q_0 = 10^{-4} \, \text{m}^3/\text{s}\) and \(\rho_f\) is the fluid density
+  - This represents mass injection rate rather than volumetric rate
+
+**6. Numerical Method Specifications**
+- Use fully implicit coupling (FIM) between flow and mechanics
+- The fracture propagation criterion uses a node-based approach checking stress intensity against toughness \(K_{Ic}\)
+- Time stepping should cover the injection period from 0 to \(t_{max}\) with appropriate increments to capture the \(t^{2/3}\) scaling of fracture length
+
+**7. Output Requirements**
+Configure time history output collection using `PackCollection` tasks in the `Tasks` section:
+- **Collections**: Create four collection tasks named `pressureCollection`, `apertureCollection`, `hydraulicApertureCollection`, and `areaCollection`
+- **Target**: Set `objectPath="ElementRegions/Fracture/FractureSubRegion"` for all collectors to extract data from fracture elements only
+- **Output File**: Configure the Event manager with a `PeriodicEvent` to trigger these tasks and write to an HDF5 file named `kgdToughnessDominated_output.hdf5`
+- **Data Contents**: Ensure the output contains datasets for simulation time, fluid pressure, element aperture, hydraulic aperture, and element area for the propagating fracture
+
+**8. External Data Files Required**
+The following external files must be present at the exact relative paths:
+- `inputFiles/hydraulicFracturing/kgdToughnessDominated_base.xml` (Base configuration file containing solver and constitutive definitions)
+- `inputFiles/hydraulicFracturing/kgdToughnessDominated_benchmark.xml` (Benchmark-specific configuration including mesh and geometry definitions)
+- `inputFiles/hydraulicFracturing/kgdToughnessDominated_Smoke.xml` (Optional integrated test with coarser mesh and reduced injection duration)
+- `inputFiles/hydraulicFracturing/scripts/hydrofractureQueries.py` (Python script for post-processing HDF5 output and extracting fracture characteristics to `model-results.txt`)
+- `inputFiles/hydraulicFracturing/scripts/hydrofractureFigure.py` (Python script for visualization and comparison with analytical solutions)
+
+*Note*: The GEOS Python tools package `geosx_xml_tools` must be installed to execute the query and visualization scripts.

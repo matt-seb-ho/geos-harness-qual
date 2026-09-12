@@ -1,0 +1,80 @@
+{
+  "tasks": [
+    {
+      "task_id": "ExampleVerticalPoroElastoPlasticWellbore",
+      "family": "wellbore",
+      "split": "train",
+      "seed_score_2026_09_11": [
+        0.528,
+        0.524
+      ],
+      "note": "most reproducible mid-range task in the pool"
+    },
+    {
+      "task_id": "AdvancedExamplePureThermalDiffusionWellbore",
+      "family": "wellbore",
+      "split": "train",
+      "seed_score_2026_09_11": [
+        0.344,
+        0.354
+      ],
+      "note": "hardest of the seven; lots of headroom"
+    },
+    {
+      "task_id": "TutorialPoroelasticity",
+      "family": "poroelastic",
+      "split": "train",
+      "seed_score_2026_09_11": [
+        0.488,
+        0.417
+      ],
+      "note": "Terzaghi consolidation; multi-file deck"
+    },
+    {
+      "task_id": "ExampleThermoporoelasticConsolidation",
+      "family": "poroelastic",
+      "split": "train",
+      "seed_score_2026_09_11": [
+        0.871,
+        0.613
+      ],
+      "note": "high variance between seeds -- watch this one"
+    },
+    {
+      "task_id": "ExamplesingleFracCompression",
+      "family": "fracture",
+      "split": "test",
+      "seed_score_2026_09_11": [
+        0.778,
+        0.824
+      ],
+      "note": ""
+    },
+    {
+      "task_id": "kgdToughnessDominated",
+      "family": "fracture",
+      "split": "test",
+      "seed_score_2026_09_11": [
+        0.861,
+        0.869
+      ],
+      "note": ""
+    },
+    {
+      "task_id": "triaxialDriverExample",
+      "family": "driver",
+      "split": "test",
+      "seed_score_2026_09_11": [
+        0.903,
+        0.864
+      ],
+      "note": "no mesh; a constitutive-model driver deck"
+    }
+  ],
+  "split_of_family": {
+    "wellbore": "train",
+    "poroelastic": "train",
+    "fracture": "test",
+    "driver": "test"
+  }
+}

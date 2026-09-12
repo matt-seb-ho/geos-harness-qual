@@ -1,0 +1,67 @@
+**Simulation Overview**
+
+Create an XML configuration for a quasi-static 2D plane strain solid mechanics simulation modeling a single inclined fracture under shear compression in an infinite, homogeneous, isotropic elastic medium. The fracture has a half-length of 1.0 meters and is inclined at an angle of 20 degrees. The model applies a constant uniaxial compressive remote stress of -100.0 MPa (negative sign indicating compression per GEOS convention) in the horizontal direction. The simulation employs a Lagrange contact model to capture frictional contact and slippage along the fracture surface, governed by the Coulomb failure criterion with a friction angle of 30 degrees. The purpose is to numerically calculate displacement and stress fields on the fracture plane and verify against analytical solutions for normal traction and slip distribution.
+
+**Mesh Requirements**
+
+Import an external unstructured mesh using the VTKMesh format with the user-specified label "CubeHex". The mesh file must contain quadrilateral elements for the continuum region and interface elements for the fracture. The mesh should represent a 2D domain with appropriate refinement to conform with the fracture geometry, where the fracture half-length is 1.0 meters. Ensure the mesh defines both the continuum region (to be named "Region") and the discontinuum/fracture region (to be named "Fracture").
+
+**Solver Configuration**
+
+Define three coupled solvers in the Solvers section:
+
+1. **Lagrangian Contact Solver**: Configure a solver named "lagrangiancontact" to handle frictional contact. Set targetRegions to include both "Region" (continuum) and "Fracture" (discontinuum). Specify the contact constitutive law as "fractureMaterial".
+
+2. **Solid Mechanics Solver**: Configure a SolidMechanicsLagrangianFEM solver named appropriately (e.g., "lagsolve") for rock deformation. Set the timeIntegrationOption to "QuasiStatic" to neglect inertial effects. Use finite element space "FE1" for discretization. Set the material name to "rock" and apply to targetRegions "Region".
+
+3. **Surface Generator**: Configure a SurfaceGenerator solver to define the fracture region and specify rock toughness properties.
+
+**Constitutive Models and Material Properties**
+
+In the Constitutive section, define two materials:
+
+1. **Rock Material**: Create an ElasticIsotropic model named "rock" with the following properties in SI units:
+   - Bulk Modulus: 16.67 GPa
+   - Shear Modulus: 10.0 GPa
+   - Density: Specify appropriate value (SI units)
+
+2. **Fracture Contact Material**: Create a Coulomb contact model named "fractureMaterial" with:
+   - Cohesion: 0.0
+   - Friction Coefficient: 0.577350269 (corresponding to a 30-degree friction angle)
+
+**Initial and Boundary Conditions**
+
+In the FieldSpecifications section:
+
+1. **Initial Stress Condition**: Apply an initial uniaxial horizontal compressive stress of -1.0e8 Pa (σ_x) throughout the domain to represent the remote compressive stress.
+
+2. **Boundary Conditions**: Apply roller constraints (zero normal displacement) on the remaining outer boundaries of the domain to simulate the infinite domain behavior.
+
+**Numerical Methods**
+
+Specify a finite element numerical method labeled "FE1" appropriate for 2D plane strain quadrilateral elements. Ensure the formulation accounts for small strain elastic deformation and frictional contact mechanics.
+
+**Output and Post-processing**
+
+Configure time history output through the Tasks section:
+
+1. Create a PackCollection task named "tractionCollection" to collect the field "traction" on the fracture surface.
+2. Create a PackCollection task named "displacementJumpCollection" to collect the field "displacementJump" (relative displacement) on the fracture surface.
+
+Configure PeriodicEvent triggers in the Events section to execute these collection tasks at appropriate intervals during the simulation.
+
+Specify HDF5 output filenames:
+- displacementJump_history.hdf5 for displacement jump data
+- traction_history.hdf5 for traction data
+
+Include VTK-format output requests for full-field visualization of displacement components (particularly u_y) and slip distributions on the fracture surface.
+
+**Required External Files**
+
+The following external files must be present at the specified relative paths:
+- inputFiles/lagrangianContactMechanics/crackInPlane_benchmark.vtu (the mesh file)
+- inputFiles/lagrangianContactMechanics/SingleFracCompression_base.xml (base configuration)
+- inputFiles/lagrangianContactMechanics/SingleFracCompression_benchmark.xml (benchmark-specific settings)
+- inputFiles/lagrangianContactMechanics/ContactMechanics_SingleFracCompression_benchmark.xml (contact mechanics solver configuration)
+
+Additionally, prepare a Python script for post-processing the HDF5 time history files to compare numerical results against the analytical solutions for normal traction and slip distributions.

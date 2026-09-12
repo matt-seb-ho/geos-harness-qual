@@ -1,0 +1,51 @@
+**GEOS XML Configuration Specification: Terzaghi Poroelastic Consolidation**
+
+**1. Simulation Type and Physical Problem**
+Configure a coupled poromechanical simulation solving the classic Terzaghi consolidation problem. The model represents a poroelastic, fluid-saturated column of height **L = 10.0 meters** with unit cross-section undergoing one-dimensional consolidation. The simulation couples single-phase fluid flow with small-strain Lagrangian solid mechanics to capture the interaction between pore pressure dissipation and solid deformation under instantaneous mechanical loading.
+
+**2. Solver Configuration**
+Define three distinct solvers under the `Solvers` section:
+- **Flow Solver**: Instantiate a solver of type `SinglePhaseFVM` with the name `SinglePhaseFlowSolver`.
+- **Solid Mechanics Solver**: Instantiate a solver of type `SolidMechanicsLagrangianFEM` with the name `LinearElasticitySolver`.
+- **Coupling Solver**: Instantiate a solver of type `SinglePhasePoromechanics` with the name `PoroelasticitySolver`. Configure this coupling solver to reference `SinglePhaseFlowSolver` as the fluid solver and `LinearElasticitySolver` as the solid solver. Specify the discretization method as `FE1` and set the target regions to `Domain`.
+
+**3. Numerical Methods**
+Under the `NumericalMethods` section:
+- **Finite Element Method**: Define a finite element scheme named `FE1` using linear basis functions with Gaussian quadrature rules for the solid mechanics solver.
+- **Finite Volume Method**: Configure a finite volume scheme for the flow solver using the two-point flux approximation (TPFA) discretization scheme.
+
+**4. Mesh Requirements**
+Generate the mesh using the internal mesh generator with the following specifications:
+- **Topology**: Beam-like structured mesh with **21 elements along the X-axis**, **1 element along the Y-axis**, and **1 element along the Z-axis**.
+- **Element Type**: Hexahedral elements (C3D8).
+- **Element Dimensions**: Each element must have dimensions of **1 meter × 1 meter × 1 meter**.
+- **Region**: Assign the mesh to a region named `Domain`.
+
+**5. Material Properties and Constitutive Models**
+Under the `Constitutive` section, define the following material properties:
+- **Solid Elasticity**: Young's modulus **E = 10⁴ Pa**, Poisson's ratio **ν = 0.2**.
+- **Poroelastic Properties**: Biot's coefficient **b = 1.0**, porosity **φ = 0.3**.
+- **Fluid Properties**: Fluid density **ρ_f = 1.0 kg/m³**, fluid compressibility **c_f = 0.0 Pa⁻¹**, fluid viscosity **μ = 1.0 Pa·s**.
+- **Permeability**: Isotropic permeability **κ = 10⁻⁴ m²**.
+
+**6. Initial and Boundary Conditions**
+Under the `FieldSpecifications` and `BoundaryConditions` sections:
+- **Mechanical Loading**: Apply a constant compressive traction **|w| = 1.0 Pa** instantaneously at time **t = 0 s** on the top face of the column (the loaded face).
+- **Mechanical Constraints**: Apply roller boundary constraints (zero normal displacement) on all boundaries except the loaded face.
+- **Flow Boundary Conditions**: Set the loaded face as permeable (drained boundary with pressure boundary condition or outlet). Set all remaining boundaries as impervious (no-flow conditions).
+- **Initial Pressure**: The initial pressure throughout the column is **p₀ = 1.0 Pa** (derived from the applied load and material parameters).
+
+**7. Time and Event Specifications**
+Configure the simulation to run for a total time of **90 seconds**, which corresponds to the characteristic consolidation time **t_c**. Set up time-stepping events to capture the transient pressure and displacement fields during the consolidation process. The problem is linear and should converge in a single Newton iteration per time step.
+
+**8. Output Requirements**
+Configure output to record:
+- Displacement fields along the column as a function of time.
+- Pressure fields along the column as a function of time.
+- Residual values for both the solid mechanics solver (`RSolid`) and the fluid solver (`RFluid`) at each Newton iteration.
+- Data sufficient to generate comparison plots between the numerical solution and the analytical Terzaghi solution at selected time intervals.
+
+**9. External Data Files**
+No external input files are required for this simulation. All necessary parameters are contained within the main input files. The reference implementation files are located at:
+- `inputFiles/poromechanics/PoroElastic_Terzaghi_base_direct.xml`
+- `inputFiles/poromechanics/PoroElastic_Terzaghi_smoke.xml`

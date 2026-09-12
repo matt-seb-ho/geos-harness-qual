@@ -1,0 +1,49 @@
+Here is the comprehensive natural language specification for generating the GEOS XML configuration file:
+
+**1. Simulation Overview**
+Create a fully coupled poromechanical simulation modeling a vertical wellbore drilled in a porous medium. The simulation must handle a three-dimensional rock domain subjected to anisotropic horizontal stresses and vertical stress, with time-dependent fluid injection inducing mechanical deformation. The physical problem requires solving for rock deformation, fluid diffusion, and poromechanical coupling effects in the near-wellbore region. The simulation must support two constitutive variants: a poroelastic version for verification against analytical solutions, and a poroplastic version using the Extended Drucker-Prager model to capture elastoplastic deformation and plastic zone development around the wellbore.
+
+**2. Mesh Configuration**
+Generate the computational mesh using the internal wellbore mesh generator (`InternalWellbore`). Create a structured three-dimensional rock domain with physical dimensions of 10 meters in the radial direction, 5 meters in the tangential direction, and 2 meters in the vertical (z) direction. The wellbore must have an initial radius of exactly 0.1 meters with a perfect vertical trajectory. Configure the mesh generator with `autoSpaceRadialElems="{ 1 }"` to automatically determine radial element spacing and override any explicit radial element count. Set `useCartesianOuterBoundary="0"` to enforce a Cartesian-aligned outer boundary on the outer block. The mesh must contain exactly 100 elements in the radial direction, 80 elements in the tangential direction, and 2 elements in the z-direction, comprising eight-node hexahedral elements (C3D8) with refinement conforming to the wellbore geometry. Define this mesh as a single cell block named "cb1".
+
+**3. Solver Specifications**
+Configure three distinct solvers in the following manner:
+
+First, instantiate a solid mechanics solver of type `SolidMechanicLagrangianFEM` named "mechanicsSolver". 
+
+Second, instantiate a single-phase flow solver of type `SinglePhaseFVM` named "SinglePhaseFlowSolver".
+
+Third, instantiate a coupling solver of type `SinglePhasePoromechanics` named "PoromechanicsSolver" that binds the previous two solvers. Configure this coupling solver to reference "SinglePhaseFlowSolver" as the fluid solver and "mechanicsSolver" as the solid solver. Set the porous material names attribute to "{porousRock}" to ensure interaction with constitutive models. Specify the target region as "Omega" and assign the discretization method "FE1" for spatial discretization.
+
+**4. Numerical Methods**
+In the NumericalMethods section, define a finite element discretization scheme named "FE1" using linear basis functions with Gaussian quadrature rules for the solid mechanics and coupling solvers. Define a finite volume discretization scheme named "singlePhaseTPFA" using the two-point flux approximation method for the flow solver.
+
+**5. Constitutive Models and Material Properties**
+Define all material properties in the Constitutive section using International System of Units.
+
+For the rock material, create two alternative configurations:
+- For the poroelastic case: Use `PorousElasticIsotropic` with a bulk modulus of 11.11 GPa and shear modulus of 8.33 GPa.
+- For the poroplastic case: Use `PorousExtendedDruckerPrager` with the same elastic properties (bulk modulus 11.11 GPa, shear modulus 8.33 GPa) plus plasticity parameters: initial friction angle of 15.27 degrees, residual friction angle of 23.05 degrees, cohesion of 1.0 MPa, hardening rate of 0.01, and dilation ratio of 1.0 (indicating associated flow rule).
+
+For the fluid material "water", use `CompressibleSinglePhaseFluid` with the following properties: density of 1000.0 kg/m³, viscosity of 0.001 Pa·s, and compressibility of 2.09×10⁻¹⁰ Pa⁻¹.
+
+For the porous medium properties: define a stress-dependent porosity model named "rockPorosity" with reference porosity of 0.3, and a constant permeability model named "rockPerm" with permeability of 1.0×10⁻²⁰ m².
+
+**6. Initial and Boundary Conditions**
+In the FieldSpecifications section, configure the following:
+
+Initialize the in-situ stress state with: minimum horizontal stress (σ_h) of -9.0 MPa, maximum horizontal stress (σ_H) of -11.0 MPa, and vertical stress (σ_v) of -12.0 MPa. All initial condition fields must have the attribute `initialCondition` set to "1".
+
+Apply mechanical loading at the wellbore wall (boundary set "rneg") using a traction boundary condition with `tractionType="normal"` and scale factor of -10.0×10⁶ Pa (representing -10 MPa compressive traction), applied as the product of the scale and the outward face normal.
+
+Apply fluid loading at the wellbore wall (boundary set "rneg") with a fluid pressure of 10.0 MPa.
+
+Apply roller constraints (zero normal displacement) to all remaining outer boundaries (xneg, xpos, yneg, ypos, zneg, zpos as appropriate).
+
+Implement time-dependent loading using a table function named "timeFunction" that defines the loading time history through coordinate-value pairs, where the loading magnitude ramps according to the specified time-magnitude pairs.
+
+**7. Output and Simulation Control**
+Configure the simulation to run for exactly 497,640 seconds (which corresponds to a non-dimensional time of t* = 4.62). Request output files in Silo format for visualization in VisIt.
+
+**8. External Data Files**
+No external input files are required for this simulation. All necessary parameters, mesh definitions, boundary conditions, and material properties must be contained entirely within the single XML configuration file. No relative paths to external data files need to be specified.
