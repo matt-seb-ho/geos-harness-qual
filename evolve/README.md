@@ -3,14 +3,29 @@
 Implement `evolve()` in `loop.py`. Nothing else in this repository should need
 to change; if you think it does, that is worth a paragraph in your write-up.
 
+## Read one rollout before you write any code
+
+```bash
+qual inspect runs/<config>-s1-<task>
+```
+
+It prints the tool mix, the call-by-call trace, which parts of the corpus the
+agent actually opened, and the deck it produced with its weakest sections named.
+An hour with that output will give you opinions about what to change that no
+amount of reading the method's paper will.
+
+This is not advice, it is the highest-weighted thing in the assessment. See
+`TASK.md`, "What we are actually looking for".
+
 ## The order to do things in
 
 ```bash
 qual mock                 # the seed config on the toy runner. Free, ~10 seconds.
 qual evolve --mock        # your loop on the toy runner. Free. Iterate here.
 qual doctor               # can this machine run a real rollout?
-qual baseline --seeds 2   # the seed on the train split, for real. 8 rollouts, ~$1.07
-qual evolve --budget 9    # your loop, for real, with a hard ceiling
+qual baseline --seeds 2   # the seed on the train split, for real. 8 rollouts, ~$1.00
+qual inspect runs/<...>   # and then read some of them
+qual evolve --budget 3    # your loop, for real, with a hard ceiling
 ```
 
 Everything before `qual doctor` is free and runs in seconds. Stay there until

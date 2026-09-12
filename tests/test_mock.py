@@ -48,3 +48,32 @@ def test_naming_the_sections_helps(tmp_path):
         for a in (seed, richer)
     ]
     assert scores[1] > scores[0] * 1.2
+
+
+def test_inspect_reads_a_transcript(tmp_path):
+    """The trace reader is the kit's most-recommended command; keep it working."""
+    import json
+
+    from qualkit.inspect import read_trace, render
+
+    workspace = tmp_path / "ws"
+    (workspace / "inputs").mkdir(parents=True)
+    (workspace / "inputs" / "deck.xml").write_text("<Problem/>")
+    (workspace / "events.jsonl").write_text("\n".join(json.dumps(e) for e in [
+        {"type": "system", "subtype": "init", "tools": ["Bash", "Read"]},
+        {"type": "assistant", "timestamp": "2026-09-12T22:00:00.000Z",
+         "message": {"usage": {"input_tokens": 10, "output_tokens": 2},
+                     "content": [{"type": "tool_use", "name": "Bash",
+                                  "input": {"command": "ls /geos_lib/inputFiles/foo"}}]}},
+        {"type": "assistant", "timestamp": "2026-09-12T22:05:00.000Z",
+         "message": {"content": [{"type": "tool_use", "name": "Write",
+                                  "input": {"file_path": "/workspace/inputs/deck.xml"}}]}},
+        {"type": "result", "num_turns": 2, "stop_reason": "end_turn"},
+    ]))
+    trace = read_trace(workspace)
+    assert trace.turns == 2 and len(trace.calls) == 2
+    assert trace.tool_mix["Bash"] == 1
+    assert trace.elapsed_seconds == 300.0
+    assert "/geos_lib/inputFiles" in " ".join(trace.corpus_reads())
+    text = render(trace)
+    assert "deck written: deck.xml" in text and "ls /geos_lib/inputFiles/foo" in text

@@ -10,10 +10,14 @@ produce a deck at all. The seven here are the ones with measured headroom and
 reproducible scores. ``seed_score_2026_09_11`` records what the *research*
 harness got, at two seeds, so you can tell a real regression from noise.
 
-Read those numbers as a prior, not a baseline. They came from a different
-configuration (a 4,462-file corpus, a RAG server, a stop hook). Your first
-paid run re-measures the seed on *this* setup, and that is the number your
-result is compared against.
+Read those numbers as a prior, not a baseline, for two reasons. They came from
+a different configuration (a 4,462-file corpus, a RAG server, a stop hook), and
+that configuration had a leak: its corpus was a git checkout, so a blocked deck
+could be recovered with ``git show``. Four of the seven tasks below are ones
+where that demonstrably happened, so treat every number in this column as an
+**upper bound on a contaminated run** rather than as a score to beat. Your first
+paid run re-measures the seed on *this* setup -- which has no git history in its
+corpus -- and that is the number your result is compared against.
 
 Why the copy ceiling is in the table
 ------------------------------------

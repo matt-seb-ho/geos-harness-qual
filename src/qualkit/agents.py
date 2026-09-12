@@ -27,8 +27,8 @@ the budget guard reads the account balance, so neither depends on the agent.
     the research harness uses, so numbers are comparable with ours. Supports
     settings-file hooks and MCP config.
 
-``acpx:claude`` / ``acpx:codex`` / ``acpx:pi`` / ``acpx:openclaw``
-    The same four agents behind the Agent Client Protocol via ``acpx``, which is
+``acpx:claude`` / ``acpx:codex`` / ``acpx:pi``
+    The same agents behind the Agent Client Protocol via ``acpx``, which is
     already in the image. One uniform flag set. **Unverified**: the flags come
     from ``acpx --help`` and nobody has run one end to end; the non-Claude agents
     also need their own credentials. ``qual harnesses`` probes what is reachable.
@@ -156,10 +156,6 @@ HARNESSES: dict[str, Harness] = {
     ),
     "acpx:pi": Harness(
         name="acpx:pi", argv=_acpx_argv("pi"), transcript="acpx-json",
-        binary="acpx", supports=_ACP_SUPPORTS,
-    ),
-    "acpx:openclaw": Harness(
-        name="acpx:openclaw", argv=_acpx_argv("openclaw"), transcript="acpx-json",
         binary="acpx", supports=_ACP_SUPPORTS,
     ),
 }

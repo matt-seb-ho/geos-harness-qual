@@ -19,7 +19,7 @@ This file is about how to drive the kit.
 git clone <this repo> && cd geos-harness-qual
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e '.[dev]'          # there are no runtime dependencies
-cp .env.example .env             # then paste in the key Matt gives you
+cp .env.example .env             # then paste in your own OpenRouter key
 pytest                           # ~50 tests, a few seconds, no network
 qual doctor                      # what this machine can and cannot do
 ```
@@ -51,7 +51,8 @@ Then open [`evolve/loop.py`](evolve/loop.py) and replace the stub.
 |---|---|
 | [`tasks/`](tasks/) | seven GEOS tasks: a natural-language specification per task, and the reference deck it is scored against. The reference decks are **never** mounted into a container. |
 | [`harness/seed/`](harness/seed/) | the starting configuration: a five-line prompt, the default tool set, one attempt, no hooks, no extra tools. What you must beat. |
-| `qualkit.agents` | which coding agent runs inside the container. Claude Code is the default and the only one verified here; `acpx` in the image also fronts codex, pi and openclaw. |
+| `qualkit.agents` | which coding agent runs inside the container. Claude Code is the default and the only one verified here; `acpx` in the image also fronts codex and pi. |
+| `qualkit.inspect` | reads one rollout's transcript: what it did, where the turns went, what it read from the corpus. The most useful thing here. |
 | `qualkit.config` | the harness configuration — everything except the model — and the five things that are fixed. |
 | `qualkit.rollout` | one rollout: materialise the configuration, run the agent in a container against one task, score the result. The unit of cost. |
 | `qualkit.corpus` | builds the read-only `/geos_lib` tree each rollout sees, **per task**, with that task's answers and their variant siblings removed. |
@@ -213,7 +214,12 @@ in the note as the experiment you would run next, with what it would cost.
 
 Everything above this line is free. Below it, a rollout is roughly **$0.11–0.13
 billed and 11–13 minutes** — measured on this kit on 2026-09-12 against account
-deltas, and in the same band the research harness reports. Budget at $0.134.
+deltas, and in the same band the research harness reports.
+
+**You bring your own key, so keep this small.** A couple of dollars is a
+complete experiment; `TASK.md` has two worked shapes, the cheaper one costing
+about $1.80. Put a hard per-key limit on your OpenRouter key, and pass
+`--budget` to everything that spends.
 
 ```bash
 qual baseline --seeds 2        # seed config, 4 train tasks x 2 seeds = 8 rollouts

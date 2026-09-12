@@ -45,6 +45,36 @@ tree rather than `inputFiles/` alone.
 Hardlinks, not symlinks: a symlink can be followed out of the mount to its
 target; a hardlink to a file that was never linked simply does not exist inside.
 
+### The corpus is assembled, never filtered
+
+This is the load-bearing design choice, and it is worth a section because the
+alternative failed in production.
+
+The research harness builds its mount by copying the **entire** GEOS checkout
+and omitting a block list. That copies `.git` along with everything else, so a
+blocked file is one command away:
+
+```
+$ cd /geos_lib && git show HEAD:inputFiles/.../spe11b_vti_source_base.xml
+<?xml version="1.0" ?> <Problem> <Solvers> <CompositionalMultiphaseFVM ...
+```
+
+Not hypothetical. In that harness's 40-task screen of 2026-09-11, **59 of 80
+rollouts ran git against `/geos_lib`**, and on **29 of 40 tasks** a git command
+naming one of that task's own blocked decks returned deck XML. `git ls-files`
+even hands over the list of paths that were removed, which is a map straight to
+the answer. Nothing in any score showed it; it was found by reading one
+transcript.
+
+This kit builds the tree from an explicit include list instead — XML under
+`inputFiles/`, RST under `docs/`, the schema — file by file. There is no `.git`,
+no object store, no reflog, and nothing to recover from. The blocked files were
+never written, rather than written and then deleted. `qual audit` checks for
+`.git`, `.hg` and `.svn` explicitly.
+
+The general rule, which is the actual lesson: **make the thing unreachable, not
+forbidden.** Anything that is removed but recoverable is not removed.
+
 This matters more than it sounds, because **several task specifications name
 their own reference files**. `TutorialPoroelasticity` ends with:
 

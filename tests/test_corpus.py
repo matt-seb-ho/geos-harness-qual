@@ -105,3 +105,20 @@ def test_no_task_is_degenerate():
         assert task.copy_ceiling < corpus.DEGENERATE_CEILING, (
             f"{task.task_id} ceiling {task.copy_ceiling}: a loop could win here "
             f"by plagiarising")
+
+
+def test_no_version_control_history_in_the_corpus(built):
+    """A blocked file recoverable from git history is not a blocked file.
+
+    The research harness copies the whole GEOS checkout minus a block list,
+    which copies `.git` too -- and in its 40-task screen, 29 tasks recovered
+    their own blocked decks with `git show`. This kit assembles the tree from an
+    include list, so there is nothing to recover from.
+    """
+    import subprocess
+
+    for vcs in (".git", ".hg", ".svn"):
+        assert not (built.root / vcs).exists(), vcs
+    probe = subprocess.run(["git", "-C", str(built.root), "rev-parse", "--git-dir"],
+                           capture_output=True, text=True)
+    assert probe.returncode != 0, "the corpus resolves to a git repository"

@@ -7,6 +7,9 @@
     qual audit [--deep]             prove no task's corpus leaks its answer
                                     (--deep also re-measures the copy ceiling)
     qual score <workspace> <task>   score a finished workspace, free
+    qual inspect <workspace>        read one rollout: what it did, where the
+                                    turns went, what it read. Free, and the
+                                    single most useful command here.
     qual mock                       run the seed config on the mock runner, free
     qual baseline [--seeds 2]       measure the seed config on train (COSTS MONEY)
     qual run <task> [--seed 1]      one real rollout, for debugging (COSTS MONEY)
@@ -33,7 +36,7 @@ from qualkit.rollout import MEASURED_USD_PER_ROLLOUT
 from qualkit.scoring import diagnose, score_workspace
 
 DEFAULT_LEDGER = Path("runs/ledger.jsonl")
-DEFAULT_CEILING = float(os.environ.get("QUAL_BUDGET_USD", "15"))
+DEFAULT_CEILING = float(os.environ.get("QUAL_BUDGET_USD", "5"))
 
 
 def _load_env(path: Path = Path(".env")) -> None:
@@ -174,6 +177,24 @@ def cmd_score(args) -> int:
     return 0
 
 
+def cmd_inspect(args) -> int:
+    from qualkit.inspect import read_trace, render
+
+    workspace = Path(args.workspace)
+    print(render(read_trace(workspace), full=args.full, limit=args.limit))
+
+    task = args.task or next(
+        (t.task_id for t in tasks.load_tasks() if t.task_id in workspace.name), None)
+    if task:
+        score = score_workspace(workspace / "inputs",
+                                tasks.get(task).ground_truth_dir, task)
+        print(f"\nscore: {score.value:.4f}  {score.status}")
+        print(diagnose(score))
+    else:
+        print("\n(pass --task to also score it)")
+    return 0
+
+
 def cmd_mock(args) -> int:
     from qualkit import mock
     evaluator = Evaluator(ledger=Ledger(Path(args.ledger)), runner=mock.run_rollout,
@@ -283,6 +304,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("workspace"); p.add_argument("task")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_score)
+
+    p = sub.add_parser("inspect")
+    p.add_argument("workspace")
+    p.add_argument("--task", default=None,
+                   help="task id, if it cannot be read off the workspace name")
+    p.add_argument("--full", action="store_true", help="every tool call, not the first 40")
+    p.add_argument("--limit", type=int, default=40)
+    p.set_defaults(func=cmd_inspect)
 
     p = sub.add_parser("mock")
     p.add_argument("--seeds", type=int, default=2)

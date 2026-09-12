@@ -22,9 +22,27 @@ So the corpus is built **per task**, and a task's corpus is missing that task's
 answers. Hardlinks, not symlinks: a symlink can be followed out of the mount,
 a hardlink to a file that was never linked simply does not exist in there.
 
+**The corpus is assembled file by file, never copied wholesale, and that is the
+point.** The research harness builds its mount by hardlinking the *entire* GEOS
+checkout minus a block list -- which copies ``.git`` along with it. A blocked
+file is then one command away:
+
+    $ cd /geos_lib && git show HEAD:inputFiles/.../spe11b_vti_source_base.xml
+    <?xml version="1.0" ?> <Problem> <Solvers> ...
+
+That is not hypothetical. In the 40-task screen of 2026-09-11, **59 of 80
+rollouts ran git against /geos_lib**, and on **29 tasks** a git command naming
+one of that task's own blocked decks returned deck XML. ``git ls-files`` even
+hands over the list of paths that were removed. See ``docs/CONTAMINATION.md``.
+
+Building the tree from an explicit include list makes that unreachable rather
+than forbidden: there is no ``.git`` here, no object store, no reflog, and
+nothing to recover from. :func:`audit` checks it.
+
 This is enforcement, not convention. A capability granted at the mount level is
 invisible from inside the loop, which is exactly how a full simulator binary sat
-unnoticed in this project's container for five weeks.
+unnoticed in this project's container for five weeks, and how git history sat in
+this one.
 """
 
 from __future__ import annotations
@@ -239,6 +257,11 @@ def audit(task_id: str, root: Path | None = None) -> list[str]:
     problems: list[str] = []
     if not dest_root.is_dir():
         return [f"no corpus built at {dest_root}"]
+    # Version-control metadata is an archive of everything that was removed.
+    for vcs in (".git", ".hg", ".svn"):
+        if (dest_root / vcs).exists():
+            problems.append(
+                f"{vcs} present: every blocked file is recoverable from history")
     blocked = blocked_deck_names(task_id)
     for path in dest_root.rglob("*"):
         if path.is_symlink():

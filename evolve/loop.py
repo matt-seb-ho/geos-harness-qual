@@ -64,6 +64,9 @@ search this sample-starved. What we are reading for:
 * **the numbers survive contact.** Paired per-task comparisons, failures counted
   as zeros, infrastructure errors excluded and reported. ``qualkit.evaluate``
   does this for you if you let it.
+* **you read what came back.** ``qual inspect <workspace>`` renders a rollout's
+  whole trace. Decisions traceable to something you saw there are the single
+  most valued thing in this exercise -- more than the score.
 * **it is legible.** Someone should be able to read your log and see which
   change was accepted, why, and what happened next.
 
