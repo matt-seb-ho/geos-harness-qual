@@ -42,6 +42,7 @@ search this sample-starved. What we are reading for:
   comparison at four tasks and two seeds is eight. Spending them well is most of
   the difficulty. Reject cheaply and often: an adapter over its token budget, or
   a proposal identical to one you already evaluated, should cost you nothing.
+  Expect one real search run, not two -- so do your debugging on the mock.
 * **the numbers survive contact.** Paired per-task comparisons, failures counted
   as zeros, harness errors excluded and reported. ``qualkit.evaluate`` does this
   for you if you let it.

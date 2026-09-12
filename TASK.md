@@ -6,14 +6,26 @@ You have surveyed methods for self-improving / self-evolving agent harnesses.
 Pick one, argue that it should work on *this* problem, implement it against the
 starter kit in this repository, run it, and write up what happened.
 
-**Time: about 20 hours of focused work, over ~3 weeks. Stop at 25.**
-**Money: a $15 API ceiling. Expect to use about $8.**
-**Deliverable: a pull request with your loop, your run log, and a 3–5 page report.**
+**Time: about 15 hours of focused work, over ~3 weeks. Stop at 18.**
+**Money: a $15 API ceiling. Expect to use about $7.**
+**Deliverable: a pull request with your loop, your run log, and a 2–3 page report.**
 
 The task is open-ended on purpose, so the time cap is real and it is part of the
-exercise. Doing 20 hours of well-scoped work and saying clearly what you did not
-get to is a *better* submission than 60 hours of sprawl. If you are at hour 20
-with a loop that runs and a null result, you are done — write it up.
+exercise. Fifteen hours is not enough to do this comfortably, and that is the
+point — you will have to decide what not to do. Doing 15 hours of well-scoped
+work and saying clearly what you left out is a *better* submission than 50 hours
+of sprawl. If you are at hour 15 with a loop that runs and a null result, you
+are done — write it up.
+
+Budget it roughly like this, and treat the check-in at the end of step 1 as a
+hard gate:
+
+| | hours |
+|---|---:|
+| 1. read the kit, run the mock loop, pick a method, write the one-pager | 4 |
+| 2. implement the loop against the free mock runner | 6 |
+| 3. the real runs | 3 |
+| 4. write it up | 2 |
 
 ## The problem, in one paragraph
 
@@ -35,7 +47,7 @@ says.
 
 ## What to do
 
-### 1. Choose, and justify (~3 hours, then check in)
+### 1. Choose, and justify (~4 hours including reading the kit, then check in)
 
 Pick one technique from your survey. Write **one page** covering:
 
@@ -62,7 +74,7 @@ unless you have a reason not to, and say which you took.
 Whichever you pick, keep it fixed. The harness is not a searchable component;
 two candidates evaluated on different harnesses are not comparable.
 
-### 3. Implement (~8 hours)
+### 3. Implement (~6 hours)
 
 Fill in `evolve/loop.py`. Develop against the free mock runner (`qual evolve
 --mock`) until the loop runs end to end, survives a failed rollout without
@@ -72,21 +84,23 @@ real money before that is true.
 The mock is a toy with a known answer — it rewards vocabulary overlap, which the
 real task does not. Read `qualkit/mock.py` so you know exactly how it is fake.
 
-### 4. Run it (~4 hours of your attention, more wall-clock)
+### 4. Run it (~3 hours of your attention, much more wall-clock)
 
 ```bash
 qual baseline --seeds 2      # 8 rollouts, ~$1.07 — your incumbent
 qual evolve --budget 9       # your loop, hard ceiling
 ```
 
-Then evaluate your champion **once** on the test split — three tasks from two
+Expect to get **one** real search run, not two. Budget your debugging for the
+mock, where it is free. Then evaluate your champion **once** on the test split — three tasks from two
 physics families the loop never saw. Once. Not "once, and then again after a
 tweak". If you evaluate on test twice, the second number is not a held-out
 number and you have to say so.
 
-### 5. Write it up (~4 hours)
+### 5. Write it up (~2 hours)
 
-3–5 pages. Structure it however you like, but it has to answer:
+2–3 pages. Short is fine; we would rather have four honest paragraphs than
+eight padded ones. It has to answer:
 
 - what method, on what harness, and why it should have worked here;
 - what you changed, and what the loop actually did — which edits were accepted,
@@ -97,6 +111,8 @@ number and you have to say so.
   bet on, and what would change your mind? If it is a null, say so plainly and
   say what it would take to detect an effect this size;
 - what you would do next with another $50 and another 20 hours;
+- **what you left out, and why.** Not an apology — a scoping decision. This is
+  a real part of the assessment;
 - anything in the starter kit you think is wrong. Genuinely — the setup has
   known problems and finding another one is a good outcome.
 
@@ -109,11 +125,11 @@ estimated, and not the $0.05 a transcript will tell you. So the ceiling is about
 | | rollouts | cost |
 |---|---:|---:|
 | seed baseline, 4 train tasks × 2 seeds | 8 | $1.07 |
-| your search: ~8 candidates × 4 tasks × 1 seed | 32 | $4.29 |
+| your search: ~6 candidates × 4 tasks × 1 seed | 24 | $3.22 |
 | proposer LLM calls | — | ~$0.10 |
-| re-running what breaks the first time | ~10 | $1.34 |
+| re-running what breaks the first time | ~8 | $1.07 |
 | champion and seed on 3 test tasks × 2 seeds | 12 | $1.61 |
-| **total** | **~62** | **~$8.40** |
+| **total** | **~52** | **~$7.10** |
 
 That is most of the ceiling, which is the point: at this price the budget is a
 real constraint and deciding what *not* to evaluate is a large part of the
@@ -125,9 +141,31 @@ scored (the ledger does this for you).
 If you are approaching $15, something is wrong with the loop rather than with
 the budget — stop and mail Matt rather than pushing on.
 
-Wall-clock is the tighter constraint. At three-way parallelism a batch of 8
-rollouts takes about 35 minutes, and a search round is a batch. Plan your runs
-the day before you need the results.
+Wall-clock is the tighter constraint, and at 15 hours of your own time it is
+the one that will actually bite. At three-way parallelism a batch of 8 rollouts
+takes about 35 minutes, and a search round is a batch — so a six-candidate
+search is an afternoon you are not at the keyboard for. Start it and go do
+something else. Plan your runs the day before you need the results.
+
+## If you are running out of time
+
+Cut in this order. Every one of these is a legitimate scoping decision as long
+as you say you made it:
+
+1. **Fewer candidates.** Four rounds that you understand beat ten that you do
+   not. The write-up is about the mechanism, not the count.
+2. **The write-up gets shorter, never skipped.** Two pages of honest reporting
+   on a half-finished search is a complete submission. A finished search with no
+   write-up is not a submission at all.
+3. **Report the train result and say the test evaluation is outstanding.** Do
+   not skip it silently, and do not rush it — a held-out number you evaluated
+   twice is worth less than one you did not evaluate.
+4. **Drop the method and hand in the analysis.** If the loop never worked, write
+   up what you built, where it broke, and what the seed baseline says. That is a
+   real result about this problem and we will read it as one.
+
+What not to cut: the one-pager check-in, the paired comparison, and honesty
+about failures. Those are the assessment.
 
 ## What we are assessing
 
