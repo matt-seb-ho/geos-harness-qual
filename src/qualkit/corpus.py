@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from qualkit import tasks
-from qualkit.treesim import GENERIC_STEMS, MIN_STEM_LENGTH, VARIANT_SUFFIXES
+from qualkit.treesim import expand_with_variants, variant_stem_keys
 
 #: The full GEOS checkout the curated tree is cut from. Override with
 #: ``GEOS_SOURCE_DIR``. On the lab server the default is already correct; off
@@ -45,12 +45,29 @@ from qualkit.treesim import GENERIC_STEMS, MIN_STEM_LENGTH, VARIANT_SUFFIXES
 GEOS_SOURCE_DIR = Path(os.environ.get(
     "GEOS_SOURCE_DIR", "/data/shared/geophysics_agent_data/data/GEOS"))
 
+#: File extensions that leak a deck. ``.geos`` is in the list because a `.geos`
+#: dependency file of a blocked deck carries the same content; the ``.xml``-only
+#: assumption is the exact shape of a leak an earlier version of this pipeline
+#: shipped.
+LEAKY_EXTENSIONS: tuple[str, ...] = ("xml", "geos")
+
+#: Matches the RST label in ``example_pairs.jsonl``'s ``title`` field, e.g.
+#: ``.. _TutorialDeadOilEgg:``. Same expression the research harness uses --
+#: an equality test against a reconstructed string is brittle to whitespace.
+EXAMPLE_LABEL_RE = re.compile(r"\s*\.\.\s*_([^:]+):")
+
 #: Maps a task id to the documentation page its specification was mined from.
 #: Without this, the agent can read the prose the task was written from, which
 #: is most of the way to the deck.
 EXAMPLE_PAIRS = Path(os.environ.get(
     "GEOS_EXAMPLE_PAIRS",
     "/data/shared/geophysics_agent_data/data/eval/example_pairs.jsonl"))
+
+#: A copy ceiling at or above this makes a task unusable: copying scores about
+#: as well as solving, so a loop can win on it without authoring anything and
+#: the task stops measuring what it claims to. Set from the one task this test
+#: actually cut (0.856) and the next-highest survivor (0.776).
+DEGENERATE_CEILING = 0.80
 
 #: Where per-task corpora are built. Must be on the same filesystem as
 #: ``GEOS_SOURCE_DIR`` for hardlinks to work; falls back to copying if not.
@@ -88,38 +105,49 @@ class CorpusReport:
                 f"blocked {len(self.blocked_names)} decks, {len(self.blocked_docs)} doc pages")
 
 
-def _stem_keys(filename: str) -> set[str]:
-    """Variant stem keys for a deck filename. Same rule the research repo uses."""
-    stem = Path(filename).stem.lower()
-    keys = {stem}
-    for suffix in VARIANT_SUFFIXES:
-        if stem.endswith(suffix) and len(stem) > len(suffix):
-            keys.add(stem[: -len(suffix)])
-    return {k for k in keys if k not in GENERIC_STEMS and len(k) >= MIN_STEM_LENGTH}
-
-
 def blocked_deck_names(task_id: str, source: Path | None = None) -> set[str]:
-    """Lowercased basenames of every deck that leaks this task's answer."""
+    """Lowercased basenames of every file that leaks this task's answer.
+
+    Three steps, and skipping the second is the usual mistake:
+
+    1. the task's own ground-truth decks;
+    2. **their variant siblings anywhere in the GEOS tree.** Given
+       ``kgdToughnessDominated_base.xml`` the tree also ships ``_benchmark`` and
+       ``_smoke`` variants of the same problem, sharing nearly every parameter.
+       Block only the exact filename and the benchmark has stopped measuring
+       authoring and started measuring file search.
+
+    Stem normalisation is :func:`qualkit.treesim.variant_stem_keys`, vendored
+    from the research harness, which is in turn the rule SIGA's runs used: strip
+    the known variant suffixes transitively, then drop any key shorter than 10
+    characters or in the generic set (``base``, ``benchmark``, ``input``,
+    ``model``...) so ``base.xml`` does not blank the whole corpus.
+    """
     task = tasks.get(task_id)
-    exact = {p.name.lower() for p in task.ground_truth_dir.glob("*.xml")}
-    keys: set[str] = set()
-    for name in exact:
-        keys |= _stem_keys(name)
-    blocked = set(exact)
+    exact = {
+        path.name.lower()
+        for path in task.ground_truth_dir.rglob("*")
+        if path.is_file() and path.suffix.lower().lstrip(".") in LEAKY_EXTENSIONS
+    }
     source = Path(source or GEOS_SOURCE_DIR)
-    if keys and source.is_dir():
-        for path in (source / "inputFiles").rglob("*.xml"):
-            if _stem_keys(path.name) & keys:
-                blocked.add(path.name.lower())
-    return blocked
+    if not source.is_dir():
+        return exact
+    # Scanned over the whole source tree, not just inputFiles: a variant sibling
+    # sitting in a test directory leaks exactly as much as one sitting next to
+    # the original.
+    return expand_with_variants(exact, source, LEAKY_EXTENSIONS)
 
 
 def blocked_doc_paths(task_id: str, pairs: Path | None = None) -> set[str]:
-    """Documentation pages the task specification was mined from, if known."""
+    """Documentation pages the task specification was mined from, if known.
+
+    The specification for each task was generated from a GEOS example page. That
+    page is most of the way to the deck, and several specifications go further
+    and name their reference files outright -- see ``docs/CONTAMINATION.md``.
+    """
     pairs = Path(pairs or EXAMPLE_PAIRS)
     if not pairs.is_file():
         return set()
-    label = f".. _{task_id}:"
     out: set[str] = set()
     for line in pairs.read_text().splitlines():
         if not line.strip():
@@ -128,8 +156,10 @@ def blocked_doc_paths(task_id: str, pairs: Path | None = None) -> set[str]:
             row = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if (row.get("title") or "").strip() == label and row.get("rst_path"):
-            out.add(str(row["rst_path"]))
+        match = EXAMPLE_LABEL_RE.match(str(row.get("title", "")))
+        rst_path = str(row.get("rst_path", "")).strip()
+        if match and rst_path and match.group(1) == task_id:
+            out.add(rst_path)
     return out
 
 
@@ -221,3 +251,90 @@ def audit(task_id: str, root: Path | None = None) -> list[str]:
         if path.read_text(errors="replace") in gt_texts:
             problems.append(f"byte-identical copy of a ground-truth deck: {path}")
     return problems
+
+
+# ---------------------------------------------------------------------------
+# The deep audit: what could an agent get by copying?
+# ---------------------------------------------------------------------------
+
+def _long_lines(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if len(line.strip()) > 25]
+
+
+def _shared_runs(candidate: str, reference_ngrams: set[str], n: int = 3) -> int:
+    lines = _long_lines(candidate)
+    return sum(1 for i in range(len(lines) - n + 1)
+               if "\n".join(lines[i:i + n]) in reference_ngrams)
+
+
+def copy_ceiling(task_id: str, root: Path | None = None, *,
+                 shortlist: int = 20, min_shared_runs: int = 3
+                 ) -> tuple[float, str | None]:
+    """Best TreeSim obtainable by copying something the agent can still read.
+
+    The name-based masking removes a task's decks and their variant siblings --
+    the policy SIGA's published runs used. What it deliberately does *not*
+    remove is a different example that happens to share a skeleton, because
+    learning from a comparable example is the signal this benchmark is built on.
+    Where that line falls cannot be settled by a filename rule, so it is
+    measured: score every readable deck against the reference and report the
+    best one.
+
+    **This is not a cheat detector.** Reading a comparable example is the
+    intended workflow -- the seed prompt points at ``/geos_lib/inputFiles/`` on
+    purpose -- and on a benchmark built from one family of examples the nearest
+    sibling is always structurally close. What the number tells you is how much
+    of a score is authoring rather than retrieval, and whether a task has gone
+    *degenerate*: if copying scores about as well as solving, a loop can win
+    without authoring anything and the task has stopped measuring what it
+    claims to.
+
+    Measured 2026-09-12, the seven tasks sit at 0.43-0.78 against a target of
+    1.0, so retrieval leaves real headroom everywhere. On three of the four
+    training tasks the ceiling is *above* the seed agent's score -- which is a
+    finding rather than a flaw, and an obvious first thing for a loop to go
+    after. One task was cut on this test:
+    ``ExampleThermoporoelasticConsolidation``, ceiling 0.856 against a seed of
+    0.87/0.61, where a plastic variant of the same problem that no suffix rule
+    reduces to the answer's stem scored as well as doing the task.
+
+    Returns ``(ceiling, filename)``. Minutes, not seconds; costs nothing.
+    """
+    import shutil
+    import tempfile
+
+    from qualkit.treesim import evaluate_directories
+
+    task = tasks.get(task_id)
+    dest_root = Path(root or CORPUS_ROOT) / task_id
+    if not dest_root.is_dir():
+        build(task_id, root=root)
+
+    reference: set[str] = set()
+    for deck in task.ground_truth_dir.glob("*.xml"):
+        lines = _long_lines(deck.read_text(errors="replace"))
+        reference |= {"\n".join(lines[i:i + 3]) for i in range(len(lines) - 2)}
+
+    scored: list[tuple[int, Path]] = []
+    for path in dest_root.rglob("*.xml"):
+        runs = _shared_runs(path.read_text(errors="replace"), reference)
+        if runs >= min_shared_runs:
+            scored.append((runs, path))
+    scored.sort(reverse=True, key=lambda pair: pair[0])
+
+    best, culprit = 0.0, None
+    for _, path in scored[:shortlist]:
+        staging = Path(tempfile.mkdtemp())
+        try:
+            # Copy the whole directory, which is what an agent that found one
+            # useful file would actually have access to.
+            for sibling in path.parent.glob("*.xml"):
+                shutil.copy(sibling, staging / sibling.name)
+            value = float(evaluate_directories(task.ground_truth_dir, staging)["treesim"])
+        except Exception:  # noqa: BLE001 -- an unscorable candidate is a 0, not a crash
+            value = 0.0
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        if value > best:
+            best, culprit = value, path.name
+    return best, culprit

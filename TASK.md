@@ -210,6 +210,16 @@ failures. Those are the assessment.
   proposer side is on you. Use `qualkit.scoring.diagnose()`, which is derived
   only from the generated deck. A contaminated run is not a weak result, it is
   no result.
+- **Reading a comparable example is allowed and intended.** The tasks come from
+  the GEOS example collection, so the corpus is full of decks that resemble the
+  answer without being it. The answer itself and its variants are masked; what
+  remains is fair game. `qual audit --deep` reports the **copy ceiling** — the
+  best score obtainable by copying something readable — which is 0.43–0.78
+  across the seven tasks, and on three of the four training tasks it is *above*
+  what the seed harness scores. That is a real opening, and taking it is not
+  cheating. Just be able to tell the difference in your note: a configuration
+  scoring at the ceiling has learned to copy; one scoring above it has learned
+  something else.
 - **Do not edit the scorer, the task prompts, the corpus builder, or the
   container image.** If you think one of them is wrong, say so in the note.
 - **The simulator does not run, and that is not an oversight.** There is no GEOS

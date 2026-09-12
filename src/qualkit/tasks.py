@@ -15,6 +15,29 @@ configuration (a 4,462-file corpus, a RAG server, a stop hook). Your first
 paid run re-measures the seed on *this* setup, and that is the number your
 result is compared against.
 
+Why the copy ceiling is in the table
+------------------------------------
+``copy_ceiling`` is the best TreeSim obtainable by **copying a file the agent
+can still read**, measured by scoring every remaining deck in that task's corpus
+against its reference. It is the answer to "could a configuration win by finding
+something close enough to plagiarise instead of authoring?"
+
+The masking removes a task's own decks and their variant siblings, which is the
+policy SIGA's published runs used. It does not remove *different* examples that
+happen to share a skeleton, and it should not -- learning from a comparable
+example is the legitimate signal this benchmark is built on. So the ceiling is
+measured rather than assumed, and a task is only usable when it sits clearly
+below what the agent already scores.
+
+One task was dropped on exactly this test. ``ExampleThermoporoelasticConsolidation``
+had a copy ceiling of **0.856** against a seed of 0.87/0.61 -- copying
+``ThermoPoroPlastic_consolidation_base.xml``, a plastic variant of the same
+problem that no suffix rule reduces to the answer's stem, scored as well as
+doing the task. It is replaced by ``ExampleSPE11b`` (ceiling 0.432).
+
+Run ``qual audit --deep`` to recompute these. It takes a few minutes and costs
+nothing.
+
 Why families, and why the split is by family
 --------------------------------------------
 These are not seven independent tasks. They are four physics families with
@@ -42,6 +65,7 @@ TASKS_DIR = Path(__file__).resolve().parents[2] / "tasks"
 SPLIT_OF_FAMILY: dict[str, str] = {
     "wellbore": "train",
     "poroelastic": "train",
+    "flow": "train",
     "fracture": "test",
     "driver": "test",
 }
@@ -52,8 +76,11 @@ class Task:
     task_id: str
     family: str
     split: str
-    #: Mean and per-seed TreeSim from the 2026-09-11 screen, research harness.
+    #: Per-seed TreeSim from the 2026-09-11 screen, research harness.
     seed_score_2026_09_11: tuple[float, ...]
+    #: Best TreeSim obtainable by copying a deck still readable in this task's
+    #: corpus. Measured 2026-09-12; recompute with ``qual audit --deep``.
+    copy_ceiling: float = 1.0
     note: str = ""
 
     @property
@@ -74,19 +101,22 @@ class Task:
 
 TASKS: tuple[Task, ...] = (
     Task("ExampleVerticalPoroElastoPlasticWellbore", "wellbore", "train",
-         (0.528, 0.524), "most reproducible mid-range task in the pool"),
+         (0.528, 0.524), 0.615, "most reproducible mid-range task in the pool"),
     Task("AdvancedExamplePureThermalDiffusionWellbore", "wellbore", "train",
-         (0.344, 0.354), "hardest of the seven; lots of headroom"),
+         (0.344, 0.354), 0.580, "hardest of the seven; lots of headroom"),
     Task("TutorialPoroelasticity", "poroelastic", "train",
-         (0.488, 0.417), "Terzaghi consolidation; multi-file deck"),
-    Task("ExampleThermoporoelasticConsolidation", "poroelastic", "train",
-         (0.871, 0.613), "high variance between seeds -- watch this one"),
+         (0.488, 0.417), 0.509, "Terzaghi consolidation; multi-file deck. Its "
+         "specification names its own reference files -- they are not there"),
+    Task("ExampleSPE11b", "flow", "train",
+         (0.506, 0.506), 0.432, "CO2 storage benchmark; five-file deck. The "
+         "lowest copy ceiling in the set"),
     Task("ExamplesingleFracCompression", "fracture", "test",
-         (0.778, 0.824), ""),
+         (0.778, 0.824), 0.591, ""),
     Task("kgdToughnessDominated", "fracture", "test",
-         (0.861, 0.869), ""),
+         (0.861, 0.869), 0.591, ""),
     Task("triaxialDriverExample", "driver", "test",
-         (0.903, 0.864), "no mesh; a constitutive-model driver deck"),
+         (0.903, 0.864), 0.776, "no mesh; a constitutive-model driver deck. "
+         "Highest copy ceiling of the seven -- still below the seed, but watch it"),
 )
 
 TASKS_BY_ID: dict[str, Task] = {t.task_id: t for t in TASKS}
@@ -117,7 +147,7 @@ def manifest() -> dict:
         "tasks": [
             {"task_id": t.task_id, "family": t.family, "split": t.split,
              "seed_score_2026_09_11": list(t.seed_score_2026_09_11),
-             "note": t.note}
+             "copy_ceiling": t.copy_ceiling, "note": t.note}
             for t in TASKS
         ],
         "split_of_family": SPLIT_OF_FAMILY,

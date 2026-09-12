@@ -8,6 +8,7 @@
         0.528,
         0.524
       ],
+      "copy_ceiling": 0.615,
       "note": "most reproducible mid-range task in the pool"
     },
     {
@@ -18,6 +19,7 @@
         0.344,
         0.354
       ],
+      "copy_ceiling": 0.58,
       "note": "hardest of the seven; lots of headroom"
     },
     {
@@ -28,17 +30,19 @@
         0.488,
         0.417
       ],
-      "note": "Terzaghi consolidation; multi-file deck"
+      "copy_ceiling": 0.509,
+      "note": "Terzaghi consolidation; multi-file deck. Its specification names its own reference files -- they are not there"
     },
     {
-      "task_id": "ExampleThermoporoelasticConsolidation",
-      "family": "poroelastic",
+      "task_id": "ExampleSPE11b",
+      "family": "flow",
       "split": "train",
       "seed_score_2026_09_11": [
-        0.871,
-        0.613
+        0.506,
+        0.506
       ],
-      "note": "high variance between seeds -- watch this one"
+      "copy_ceiling": 0.432,
+      "note": "CO2 storage benchmark; five-file deck. The lowest copy ceiling in the set"
     },
     {
       "task_id": "ExamplesingleFracCompression",
@@ -48,6 +52,7 @@
         0.778,
         0.824
       ],
+      "copy_ceiling": 0.591,
       "note": ""
     },
     {
@@ -58,6 +63,7 @@
         0.861,
         0.869
       ],
+      "copy_ceiling": 0.591,
       "note": ""
     },
     {
@@ -68,12 +74,14 @@
         0.903,
         0.864
       ],
-      "note": "no mesh; a constitutive-model driver deck"
+      "copy_ceiling": 0.776,
+      "note": "no mesh; a constitutive-model driver deck. Highest copy ceiling of the seven -- still below the seed, but watch it"
     }
   ],
   "split_of_family": {
     "wellbore": "train",
     "poroelastic": "train",
+    "flow": "train",
     "fracture": "test",
     "driver": "test"
   }

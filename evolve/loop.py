@@ -86,6 +86,12 @@ does not read as "improve the prompt":
 * **Retries.** ``config.retry``: the same idea host-side, works on any harness,
   costs a fresh context each attempt. Which is cheaper? Nobody here knows.
 * **Context and turns.** ``max_turns``. Our cap of 60 is inherited, not derived.
+* **Retrieval.** The corpus is 842 files and 4 MB, and the tasks come from that
+  same example collection, so the deck that most resembles the answer is in
+  there (the answer itself and its variants are not). ``qual audit --deep``
+  measures what pure copying gets: 0.43-0.78, and *above the seed agent* on
+  three of the four training tasks. A configuration that reliably finds and
+  adapts the nearest example is a legitimate and probably cheap win.
 
 Things that will waste your money
 ---------------------------------

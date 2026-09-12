@@ -1,0 +1,48 @@
+Based on the SPE11b benchmark documentation, here is the comprehensive natural language specification for generating the XML configuration file:
+
+**1. Simulation Type and Physical Problem**
+Create an XML configuration for a compositional multiphase flow simulation with thermal effects (`isThermal` enabled) modeling CO2 storage in a heterogeneous 2D reservoir. The simulation must represent the SPE11b benchmark case, which investigates residual trapping, dissolution trapping, and convective mixing mechanisms of CO2, including the thermal effects of injecting cold CO2. The domain represents an 8.4 km wide by 1.2 km deep vertical cross-section, with the reservoir top located at 2000 m depth from the surface. The simulation encompasses three distinct periods: an initial 1000-year thermal equilibration phase (starting at simulation time -1000 years) to stabilize the geothermal gradient, followed by a 1000-year injection and migration period (50 years of CO2 injection at the bottom injector, 25 years of injection at the top injector starting after a 25-year delay, and 950 years of post-injection migration). The reservoir consists of 7 distinct geological facies with heterogeneous petrophysical properties.
+
+**2. Required Solver Parameters and Settings**
+Configure a `CompositionalMultiphaseFVM` solver with the following specifications:
+- Enable thermal formulation by setting `isThermal="1"` and mass-based formulation with `useMass="1"`
+- Set the target regions to include the reservoir domain
+- Link to a `TwoPointFluxApproximation` discretization block named appropriately (e.g., "TPFA") using Phase Potential Upwind (PPU) scheme for flux calculations
+- Include time-step control parameters: `targetPhaseVolFractionChangeInTimeStep` to govern adaptive time-step selection and `maxCompFractionChange` to control solution chopping strategy
+- Configure `NonlinearSolverParameters` with: nonlinear convergence tolerance, line search activation and parameters, and time step increase/decrease control parameters
+- Configure `LinearSolverParameters` to use Flexible GMRES (`F-GMRES`) as the iterative solver with Multi Grid Reduction (MGR) preconditioner
+
+**3. Mesh Requirements**
+Define a structured VTI (VTK Image Data) mesh with dimensions of 840 cells in the horizontal direction by 120 cells in the vertical direction (840×120), corresponding to the filename pattern `spe11b_vti_source_00840x00120.xml`. This represents a uniform 10m×10m cell size covering the 8400m×1200m domain. The mesh must generate hexahedral element tags specifically labeled `12_hexahedra` through `15_hexahedra` for the left and right buffer regions (fictive aquifers). Additionally, define geometric sets using box coordinates for: three reporting zones (Box A for initial anticline accumulation, Box B for top anticline accumulation, Box C for convective mixing patterns), two injection locations (bottom and top), and boundary surfaces ("top" and "bottom").
+
+**4. Material Properties and Constitutive Models**
+Implement material definitions for 7 distinct facies using a combination of tabulated and constant property models:
+- **Relative Permeability and Capillary Pressure**: Import tabulated values from an external file for all facies, with specific tables defining saturation-dependent relative permeability and capillary pressure curves (Brooks-Corey type behavior). Facies #5 requires particular attention due to its large entry pressure jump.
+- **Rock Properties**: Define constant values per facies for porosity, permeability (three components), and rock thermal conductivity, applying these through `FieldSpecification` scaling linked to generated field names (e.g., `thermalCond_rockThermalConductivity`).
+- **Diffusivity**: Set as a constant value (non-heterogeneous) directly in the constitutive model.
+- **Fluid Model**: Use `CO2BrinePhillipsThermalFluid` to model brine and CO2 properties, specifically employing the Span-Wagner model for CO2 density and the Fenghour model for CO2 viscosity, with pressure-temperature-composition dependencies.
+
+**5. Initial and Boundary Conditions**
+Configure the following initial and boundary specifications:
+- **Initial Conditions**: Establish hydrostatic equilibrium using the `HydrostaticEquilibrium` tag with initial pressure and temperature profiles. Set initial temperature distribution using a linear geothermal gradient of 25°C/km originating from a bottom boundary temperature of 70°C. Define initial composition profiles via `Function` specifications.
+- **Boundary Conditions**: Apply Dirichlet temperature boundary conditions on the "top" and "bottom" geometrical sets using `FieldSpecification`. Implement fictive aquifer buffers on the left and right domain boundaries by applying volume scaling factors (dependent on discretization) to cell tags `12_hexahedra` through `15_hexahedra` to damp pressure buildup.
+- **Source Terms**: Model two CO2 injectors using `SourceFlux` objects (not wellbores) with mass flux boundary conditions. The bottom injector operates for 50 years starting at time 0; the top injector operates for 25 years starting at time 25 years. Link these to time-varying `Function` objects defining the mass flux schedules. Apply `FieldSpecification` for temperature at the same cell sets to define the injected CO2 temperature (colder than reservoir).
+
+**6. Numerical Method Specifications**
+- **Spatial Discretization**: Use the Finite Volume Method with Two-Point Flux Approximation (TPFA) on a cell-centered grid.
+- **Advection Scheme**: Implement Phase Potential Upwind (PPU) for phase flux calculations.
+- **Temporal Integration**: Use implicit time stepping with adaptive time step control based on phase volume fraction changes (`targetPhaseVolFractionChangeInTimeStep`).
+- **Nonlinear Solution**: Employ a Newton-type solver with line search capability, solution chopping based on maximum component fraction change (`maxCompFractionChange`), and specified convergence tolerances.
+- **Linear Solution**: Use Flexible GMRES with Multi Grid Reduction preconditioning for the linear system solves at each nonlinear iteration.
+
+**7. Output Requirements**
+Configure VTK output for visualization in ParaView, ensuring the following fields are written: temperature, CO2 phase saturation, and dissolved CO2 mole fraction. Set up specific time output at 500 years and 1000 years after the start of injection (simulation times -500 and 0? No, equilibration is -1000 to 0, so 500 years after injection start is simulation time 500, 1000 years is simulation time 1000). Enable integrated mass balance reporting for the three defined reporting boxes (A, B, and C) to monitor CO2 accumulation and dissolution. Ensure output is compatible with both ParaView direct visualization and the provided Python post-processing script (`example_script.py`) which computes integrated quantities over the reporting boxes.
+
+**8. External Data Files Required**
+The XML configuration must reference the following external files using exact relative paths:
+- `inputFiles/compositionalMultiphaseFlow/benchmarks/SPE11/b/spe11b_vti_source_base.xml` (to be included for all non-mesh-related parameters)
+- `inputFiles/compositionalMultiphaseFlow/benchmarks/SPE11/b/include/kr.xml` (containing tabulated relative permeability and capillary pressure tables for all 7 facies)
+- `inputFiles/compositionalMultiphaseFlow/benchmarks/SPE11/b/include/properties_vti.xml` (defining field specifications for property scaling including thermal conductivity, porosity, permeability, and buffer volume scaling factors)
+- `inputFiles/compositionalMultiphaseFlow/benchmarks/SPE11/b/include/dirichlet_boundary_vti.xml` (specifying Dirichlet temperature boundary conditions for top and bottom boundaries)
+
+Additionally, note that the main XML file should be named `spe11b_vti_source_00840x00120.xml` (or similar pattern reflecting the 840×120 discretization) and should include the base XML file listed above.

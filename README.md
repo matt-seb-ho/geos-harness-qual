@@ -243,15 +243,33 @@ mistakes on this project:
 ## Contamination
 
 The agent must not be able to read the answer. For each task, three things are
-removed from its corpus: the reference decks, their variant siblings (given
-`Foo_base.xml` the GEOS tree usually also has `Foo_smoke.xml`, which shares
-nearly every parameter), and the documentation page the specification was
-written from. Hardlinks, not symlinks — a symlink can be followed out of a
-read-only mount.
+removed from its corpus: the reference decks (`.xml` and `.geos`), their variant
+siblings anywhere in the GEOS tree (given `Foo_base.xml` the tree usually also
+has `Foo_smoke.xml`, which shares nearly every parameter), and the documentation
+page the specification was written from. Hardlinks, not symlinks — a symlink can
+be followed out of a read-only mount. It is the rule SIGA's published runs used;
+`docs/CONTAMINATION.md` states it exactly.
+
+It matters more than it sounds: several specifications **name their own
+reference files**. `TutorialPoroelasticity` ends by pointing at
+`inputFiles/poromechanics/PoroElastic_Terzaghi_base_direct.xml`. It is not
+there — nor are `_smoke`, `_benchmark`, or `_base_iterative`, which the spec
+never mentions and which is not in the ground-truth directory either. Variant
+expansion found it.
 
 ```bash
-qual audit    # must print "clean" before you believe any score
+qual audit           # must print "clean" before you believe any score
+qual audit --deep    # also re-measures the copy ceiling. Minutes, free.
 ```
+
+The **copy ceiling** is the part a filename rule cannot settle: the best TreeSim
+obtainable by copying a deck the agent can still read. Reading a comparable
+example is the intended workflow, so this is not a cheat detector — it is a
+floor on what retrieval alone achieves. The seven tasks sit at **0.43–0.78**
+against a target of 1.0, so authoring still has to do most of the work. One task
+was cut for reaching 0.856. And on three of the four training tasks the ceiling
+is *above* what the seed harness scores, which is the most obvious improvement
+in this kit lying around unclaimed.
 
 The agent also has no web tools. `WebSearch` and `WebFetch` are disallowed
 because every GEOS example deck is public on GitHub, and a fetch tool is a
@@ -274,4 +292,5 @@ measured against.
 Those numbers are also why there are seven tasks and not forty-six. Twelve tasks
 in the pool score a flat 1.000 at both seeds — no headroom, so no candidate can
 beat the seed on them — and several never produce a deck at all. These seven are
-the ones with measured room to move.
+the ones with measured room to move *and* a copy ceiling low enough that the
+room has to be earned by authoring.

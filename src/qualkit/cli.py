@@ -4,7 +4,8 @@
     qual tasks                      the seven tasks, families, splits
     qual harnesses                  which coding agents this image can run
     qual corpus [--force]           build the per-task read-only GEOS trees
-    qual audit                      prove no task's corpus leaks its answer
+    qual audit [--deep]             prove no task's corpus leaks its answer
+                                    (--deep also re-measures the copy ceiling)
     qual score <workspace> <task>   score a finished workspace, free
     qual mock                       run the seed config on the mock runner, free
     qual baseline [--seeds 2]       measure the seed config on train (COSTS MONEY)
@@ -103,12 +104,20 @@ def cmd_harnesses(args) -> int:
 
 
 def cmd_tasks(args) -> int:
-    print(f"{'split':6} {'family':12} {'2026-09-11 seed':16} task")
+    print(f"{'split':6} {'family':12} {'seed':10} {'copy':6} task")
+    print(f"{'':6} {'':12} {'2026-09-11':10} {'ceil':6}")
     for task in tasks.load_tasks():
         scores = "/".join(f"{v:.2f}" for v in task.seed_score_2026_09_11)
-        print(f"{task.split:6} {task.family:12} {scores:16} {task.task_id}")
+        print(f"{task.split:6} {task.family:12} {scores:10} "
+              f"{task.copy_ceiling:<6.2f} {task.task_id}")
         if task.note:
-            print(f"{'':36}{task.note}")
+            print(f"{'':37}{task.note}")
+    print("\nseed: what the research harness scored, at two seeds. A prior, not "
+          "your baseline.")
+    print("copy ceiling: the best score obtainable by copying a deck the agent can "
+          "still read.")
+    print("  Not a cheat detector -- see docs/CONTAMINATION.md. `qual audit --deep` "
+          "re-measures it.")
     return 0
 
 
@@ -132,6 +141,26 @@ def cmd_audit(args) -> int:
         failures += len(problems)
     print("\nclean" if not failures
           else f"\n{failures} leaks -- do not trust any score until these are fixed")
+
+    if getattr(args, "deep", False):
+        print("\nCopy ceiling: the best TreeSim obtainable by copying a deck the agent")
+        print("can still read. NOT a cheat detector -- reading a comparable example is")
+        print("the intended workflow. It is a floor on what retrieval alone achieves.")
+        print(f"A task is degenerate, and unusable, above {corpus.DEGENERATE_CEILING:.2f}.\n")
+        for task in tasks.load_tasks():
+            ceiling, culprit = corpus.copy_ceiling(task.task_id)
+            seeds = task.seed_score_2026_09_11
+            mark = ""
+            if ceiling >= corpus.DEGENERATE_CEILING:
+                mark = "   <-- DEGENERATE: a loop can win here by plagiarising"
+                failures += 1
+            elif ceiling > max(seeds):
+                mark = "   (above the seed: retrieval alone beats the seed agent here)"
+            print(f"  {task.task_id:<45} {ceiling:.3f}  "
+                  f"(recorded {task.copy_ceiling:.3f}, seed "
+                  f"{'/'.join(f'{v:.2f}' for v in seeds)}){mark}")
+            if culprit:
+                print(f"  {'':<45} via {culprit}")
     return 0 if not failures else 1
 
 
@@ -245,7 +274,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("corpus"); p.add_argument("--force", action="store_true")
     p.set_defaults(func=cmd_corpus)
 
-    sub.add_parser("audit").set_defaults(func=cmd_audit)
+    p = sub.add_parser("audit")
+    p.add_argument("--deep", action="store_true",
+                   help="also re-measure the copy ceiling (minutes, free)")
+    p.set_defaults(func=cmd_audit)
 
     p = sub.add_parser("score")
     p.add_argument("workspace"); p.add_argument("task")

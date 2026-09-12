@@ -35,6 +35,41 @@ def test_variant_siblings_are_blocked_too(built):
                for name in built.blocked_names), built.blocked_names
 
 
+def test_variant_stem_rule_matches_the_published_policy():
+    """The rule SIGA's runs used: strip suffixes transitively, then filter.
+
+    Pinned because it is the whole masking policy, and a plausible-looking
+    "simplification" of it (one pass instead of a fixpoint, or dropping the
+    length floor) quietly stops blocking things.
+    """
+    from qualkit.treesim import variant_stem_keys
+
+    # transitive: _base_iterative reduces past _base as well
+    assert "poroelastic_terzaghi" in variant_stem_keys("PoroElastic_Terzaghi_base_iterative.xml")
+    assert "poroelastic_terzaghi" in variant_stem_keys("PoroElastic_Terzaghi_smoke.xml")
+    # generic and short stems are dropped, or base.xml blanks the corpus
+    assert variant_stem_keys("base.xml") == set()
+    assert variant_stem_keys("smoke.xml") == set()
+    assert variant_stem_keys("short.xml") == set()
+
+
+def test_geos_dependency_files_are_leaky_too(built):
+    """A .geos table file of a blocked deck carries the same content."""
+    from qualkit import corpus
+    assert "geos" in corpus.LEAKY_EXTENSIONS
+    names = corpus.blocked_deck_names("triaxialDriverExample")
+    assert any(name.endswith(".geos") for name in names), names
+
+
+def test_specifications_that_name_their_own_answer_still_do_not_leak():
+    """TutorialPoroelasticity's spec ends by naming its reference files."""
+    from qualkit import corpus, tasks
+    spec = tasks.get("TutorialPoroelasticity").instructions()
+    assert "PoroElastic_Terzaghi_base_direct.xml" in spec, "spec no longer names it"
+    assert "poroelastic_terzaghi_base_direct.xml" in corpus.blocked_deck_names(
+        "TutorialPoroelasticity")
+
+
 def test_the_source_documentation_page_is_blocked(built):
     assert built.blocked_docs, "the page the spec was mined from must not be readable"
     for doc in built.blocked_docs:
@@ -57,3 +92,16 @@ def test_audit_passes_for_every_task(tmp_path_factory):
     for task in tasks.load_tasks():
         corpus.build(task.task_id, root=root)
         assert corpus.audit(task.task_id, root=root) == []
+
+
+def test_no_task_is_degenerate():
+    """Copying a readable deck must not score as well as solving the task.
+
+    Guards the recorded ceilings rather than recomputing them -- the real
+    measurement is `qual audit --deep`, which takes minutes. If you change the
+    task set, run it and update `tasks.py`.
+    """
+    for task in tasks.load_tasks():
+        assert task.copy_ceiling < corpus.DEGENERATE_CEILING, (
+            f"{task.task_id} ceiling {task.copy_ceiling}: a loop could win here "
+            f"by plagiarising")
