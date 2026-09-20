@@ -20,10 +20,22 @@ qual doctor                      # what this machine can and cannot do
 ```
 
 On the lab server the container already exists as `geos-eval` and the backend is
-`enroot`, because the docker daemon is root-only there. Off that server you also
-need the GEOS source tree to build the corpus from: clone
-`https://github.com/GEOS-DEV/GEOS` and set `GEOS_SOURCE_DIR` to the checkout.
-Only XML, RST and the schema are read.
+`enroot`, because the docker daemon is root-only there. `qual doctor` tells you
+which of the two below you still need.
+
+**The container.** [`run/Dockerfile`](run/Dockerfile) is the image, and it is
+the same file the lab server's was built from. Nothing GEOS-specific is in it —
+the corpus is a mount, not a layer — so it is ubuntu:24.04 plus `xmllint`,
+python3, uv, node, git and the agent CLIs.
+
+```bash
+docker build -t geos-eval -f run/Dockerfile run/   # then QUAL_CONTAINER_BACKEND=docker
+bash run/build_enroot_image.sh                     # no docker daemon; several minutes
+```
+
+**The corpus.** Off the lab server you also need the GEOS source tree to build
+it from: clone `https://github.com/GEOS-DEV/GEOS` and set `GEOS_SOURCE_DIR` to
+the checkout. Only XML, RST and the schema are read.
 
 ## First five minutes
 
@@ -119,8 +131,9 @@ version control history. The research harness mounts 4,462 files and 435 MB;
 this is 842 files and 4 MB, which is most of why a rollout here takes about 690
 seconds rather than 1,450.
 
-Also installed: `xmllint`, `python3`, `uv`, `node`, `git`, a normal shell. So
-schema validation works:
+Also installed: `xmllint`, `python3`, `uv`, `node`, `git`, a normal shell —
+[`run/Dockerfile`](run/Dockerfile) is the whole of it. So schema validation
+works:
 
 ```bash
 xmllint --noout --schema /geos_lib/schema/schema.xsd inputs/deck.xml

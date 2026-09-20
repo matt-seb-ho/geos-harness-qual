@@ -42,7 +42,7 @@ DOCKER, ENROOT = "docker", "enroot"
 _VALID_BACKENDS = (DOCKER, ENROOT)
 
 #: Image tag (docker) / container name (enroot). Built from ``run/Dockerfile``
-#: in the SIGA repo; on the lab server it already exists under this name.
+#: in this repo; on the lab server it already exists under this name.
 IMAGE = os.environ.get("QUAL_CONTAINER_IMAGE", "geos-eval")
 
 WORKDIR = "/workspace"
@@ -145,8 +145,8 @@ def preflight() -> list[str]:
         elif IMAGE not in probe.stdout.split():
             problems.append(
                 f"enroot container {IMAGE!r} does not exist. Build it with "
-                f"`bash run/build_enroot_image.sh` in the SIGA repo, or set "
-                f"QUAL_CONTAINER_IMAGE."
+                f"`bash run/build_enroot_image.sh` (several minutes), or point "
+                f"QUAL_CONTAINER_IMAGE at one you already have."
             )
     if not os.environ.get("OPENROUTER_API_KEY"):
         problems.append("OPENROUTER_API_KEY is not set (copy .env.example to .env)")
