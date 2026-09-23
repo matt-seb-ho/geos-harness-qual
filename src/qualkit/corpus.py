@@ -181,6 +181,15 @@ def blocked_doc_paths(task_id: str, pairs: Path | None = None) -> set[str]:
     return out
 
 
+def _stamp_path(task_id: str, root: Path | None = None) -> Path:
+    """The build stamp sits next to the corpus, never inside it.
+
+    Inside, it is mounted at ``/geos_lib/.corpus.json`` and hands the agent the
+    list of every file that was removed.
+    """
+    return Path(root or CORPUS_ROOT) / f"{task_id}.corpus.json"
+
+
 def build(task_id: str, *, source: Path | None = None, root: Path | None = None,
           force: bool = False) -> CorpusReport:
     """Materialise the corpus for one task. Idempotent unless ``force``."""
@@ -191,8 +200,12 @@ def build(task_id: str, *, source: Path | None = None, root: Path | None = None,
             f"GEOS (see README 'Setup') and point it at the checkout."
         )
     dest_root = Path(root or CORPUS_ROOT) / task_id
-    stamp = dest_root / ".corpus.json"
-    if stamp.is_file() and not force:
+    stamp = _stamp_path(task_id, root)
+    # Earlier versions wrote the stamp inside the corpus, where the agent could
+    # read the list of blocked files. A corpus that still carries one is rebuilt.
+    legacy_stamp = dest_root / ".corpus.json"
+    if (stamp.is_file() and dest_root.is_dir() and not legacy_stamp.exists()
+            and not force):
         cached = json.loads(stamp.read_text())
         return CorpusReport(
             task_id=cached["task_id"], root=dest_root,
@@ -262,8 +275,17 @@ def audit(task_id: str, root: Path | None = None) -> list[str]:
         if (dest_root / vcs).exists():
             problems.append(
                 f"{vcs} present: every blocked file is recoverable from history")
+    # An allowlist, not just a denylist: anything at the root the include list
+    # did not put there is something nobody decided the agent should read.
+    expected = set(DEST_OF_SOURCE.values())
+    for entry in sorted(dest_root.iterdir()):
+        if entry.name not in expected:
+            problems.append(f"unexpected entry at corpus root: {entry}")
     blocked = blocked_deck_names(task_id)
     for path in dest_root.rglob("*"):
+        rel_parts = path.relative_to(dest_root).parts
+        if len(rel_parts) > 1 and path.name.startswith("."):
+            problems.append(f"dotfile in corpus: {path}")
         if path.is_symlink():
             problems.append(f"symlink in corpus (can be followed out): {path}")
         if path.is_file() and path.name.lower() in blocked:

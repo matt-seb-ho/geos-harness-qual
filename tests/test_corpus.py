@@ -122,3 +122,31 @@ def test_no_version_control_history_in_the_corpus(built):
     probe = subprocess.run(["git", "-C", str(built.root), "rev-parse", "--git-dir"],
                            capture_output=True, text=True)
     assert probe.returncode != 0, "the corpus resolves to a git repository"
+
+
+def test_blocked_names_are_not_listed_inside_the_corpus(built):
+    """The build stamp names every removed file, so it must not be mounted.
+
+    It used to be written to the corpus root, where `cat /geos_lib/.corpus.json`
+    returned the block list.
+    """
+    assert not (built.root / ".corpus.json").exists()
+    for path in built.root.rglob("*"):
+        if path.is_file() and path.suffix not in (".xml", ".rst", ".xsd"):
+            raise AssertionError(f"unexpected file in corpus: {path}")
+
+
+def test_legacy_in_corpus_stamp_forces_a_rebuild(tmp_path):
+    report = corpus.build(TASK, root=tmp_path)
+    (report.root / ".corpus.json").write_text("{}")
+    corpus.build(TASK, root=tmp_path)
+    assert not (report.root / ".corpus.json").exists()
+
+
+def test_audit_flags_unexpected_entries(tmp_path):
+    report = corpus.build(TASK, root=tmp_path)
+    (report.root / "notes.txt").write_text("x")
+    (report.root / "docs" / ".hidden").write_text("x")
+    problems = corpus.audit(TASK, root=tmp_path)
+    assert any("notes.txt" in p for p in problems)
+    assert any(".hidden" in p for p in problems)
